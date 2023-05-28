@@ -1,0 +1,41 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to gdbserver",
+            "useExtendedRemote": true,
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "/usr/local/bin/berry",
+            //"processId": "${command:pickProcess}",
+            "MIMode": "gdb",
+            "miDebuggerServerAddress": "localhost:1234",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "linux": {
+                "MIMode": "gdb"
+            }
+        },
+        {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/.o/berry",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [{"name": "DISPLAY", "value": ":2"}],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build", 
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ]
+}
+

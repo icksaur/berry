@@ -48,6 +48,7 @@ static char global_font[MAXLEN] = DEFAULT_FONT;
 static XRenderColor r_color;
 static GC gc;
 static Atom utf8string;
+static Time last_release = 0; /* double-click detection */
 
 /* All functions */
 
@@ -114,6 +115,7 @@ static void ipc_resize_relative(long *d);
 static void ipc_toggle_decorations(long *d);
 static void ipc_window_close(long *d);
 static void ipc_window_center(long *d);
+static void ipc_window_hide(long *d);
 static void ipc_switch_ws(long *d);
 static void ipc_send_to_ws(long *d);
 static void ipc_fullscreen(long *d);
@@ -198,7 +200,8 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCSaveMonitor]              = ipc_save_monitor,
     [IPCSetFont]                  = ipc_set_font,
     [IPCEdgeGap]                  = ipc_edge_gap,
-    [IPCConfig]                   = ipc_config
+    [IPCConfig]                   = ipc_config,
+    [IPCWindowHide]               = ipc_window_hide,
 };
 
 static unsigned
@@ -670,6 +673,14 @@ handle_button_press(XEvent *e)
     do {
         XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask, &ev);
         switch (ev.type) {
+            case ButtonRelease:
+                current_time = ev.xbutton.time;
+                if (current_time - last_release < DOUBLECLICK_INTERVAL) {
+                    client_monocle(c);
+                    continue;
+                }
+                last_release = current_time;
+                break;
             case ConfigureRequest:
             case Expose:
             case MapRequest:
@@ -686,6 +697,9 @@ handle_button_press(XEvent *e)
                 if ((state == (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || ev.xbutton.state == Button1Mask) {
                     nx = ocx + (ev.xmotion.x - x);
                     ny = ocy + (ev.xmotion.y - y);
+                    if (c->mono) {
+                        client_resize_absolute(c, c->prev.width, c->prev.height);
+                    }
                     if (conf.edge_lock)
                         client_move_relative(c, nx - c->geom.x, ny - c->geom.y);
                     else
@@ -993,6 +1007,15 @@ ipc_window_center(long *d)
 }
 
 static void
+ipc_window_hide(long *d)
+{
+    UNUSED(d);
+    if (f_client == NULL)
+        return;
+    client_hide(f_client);
+}
+
+static void
 ipc_switch_ws(long *d)
 {
     int ws = d[1];
@@ -1178,7 +1201,7 @@ ipc_config(long *d)
             conf.resize_mask = (d[2] == 0) ? conf.resize_mask : d[2];
             grab_buttons();
             break;
-        case IPCPointerInterval:
+        case IPCPointerInterval:    
             conf.pointer_interval = d[2];
             break;
         case IPCFocusFollowsPointer:

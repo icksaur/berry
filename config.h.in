@@ -64,10 +64,11 @@
 #define DECORATE_NEW true
 #define MOVE_BUTTON 1
 #define MOVE_MASK Mod4Mask
-#define RESIZE_BUTTON 1
-#define RESIZE_MASK Mod1Mask
+#define RESIZE_BUTTON 3
+#define RESIZE_MASK Mod4Mask
 #define POINTER_INTERVAL 0
 #define FOLLOW_POINTER false
 #define WARP_POINTER false
+#define DOUBLECLICK_INTERVAL 200
 
 #endif
