@@ -77,7 +77,6 @@ static const struct command command_table[] = {
     { "draw_text",              IPCDrawText,                true,  1, fn_bool    },
     { "edge_lock",              IPCEdgeLock,                true,  1, fn_bool    },
     { "set_font",               IPCSetFont,                 false, 1, fn_font    },
-    { "json_status",            IPCJSONStatus,              true,  1, fn_bool    },
     { "manage",                 IPCManage,                  true,  1, fn_str     },
     { "unmanage",               IPCUnmanage,                true,  1, fn_str     },
     { "decorate_new",           IPCDecorate,                true,  1, fn_bool    },

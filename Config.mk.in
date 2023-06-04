@@ -21,7 +21,7 @@ O		:= .o/
 
 ################ Compiler options ####################################
 
-debug		:= 0
+debug		:= 1
 libs		:= @pkg_libs@
 ifdef debug
     cflags	:= -O0 -ggdb3

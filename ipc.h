@@ -44,7 +44,6 @@ enum IPCCommand
     IPCDrawText,
     IPCEdgeLock,
     IPCSetFont,
-    IPCJSONStatus,
     IPCNameDesktop,
     IPCQuit,
     IPCManage,

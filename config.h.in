@@ -50,7 +50,6 @@
 #define TITLE_CENTER true
 #define SMART_PLACE true
 #define DRAW_TEXT true
-#define JSON_STATUS true
 #define FULLSCREEN_REMOVE_DEC true
 #define FULLSCREEN_MAX true
 

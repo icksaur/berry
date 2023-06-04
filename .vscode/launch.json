@@ -20,7 +20,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/.o/berry",
-            "args": [],
+            "args": ["-d"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [{"name": "DISPLAY", "value": ":2"}],

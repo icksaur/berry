@@ -1158,9 +1158,6 @@ ipc_config(long *d)
         case IPCEdgeLock:
             conf.edge_lock = d[2];
             break;
-        case IPCJSONStatus:
-            conf.json_status = d[2];
-            break;
         case IPCManage:
             conf.manage[(int)d[2]] = true;
             break;
@@ -1999,7 +1996,6 @@ setup(void)
     conf.bot_gap          = BOT_GAP;
     conf.smart_place      = SMART_PLACE;
     conf.draw_text        = DRAW_TEXT;
-    conf.json_status      = JSON_STATUS;
     conf.manage[Dock]     = MANAGE_DOCK;
     conf.manage[Dialog]   = MANAGE_DIALOG;
     conf.manage[Toolbar]  = MANAGE_TOOLBAR;
@@ -2228,48 +2224,21 @@ client_set_status(struct client *c)
     else
         decorated = "false";
 
-
-    if (conf.json_status) {
-        mon = ws_m_list[c->ws];
-        size = asprintf(&str,
-                "{"
-                    "\"window\":\"0x%08x\","
-                    "\"geom\":{"
-                        "\"x\":%d,"
-                        "\"y\":%d,"
-                        "\"width\":%d,"
-                        "\"height\":%d"
-                    "},"
-                    "\"monitor\":{"
-                        "\"id\": %d,"
-                        "\"x\":%d,"
-                        "\"y\":%d,"
-                        "\"width\":%d,"
-                        "\"height\":%d"
-                    "},"
-                    "\"state\":\"%s\","
-                    "\"decorated\":\"%s\""
-                "}",
-                (unsigned int)c->window, c->geom.x, c->geom.y, c->geom.width, c->geom.height,
-                mon, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height,
-                state, decorated);
-    } else {
-        size = asprintf(&str,
-                "0x%08x, " // window id
-                "%d, " // x
-                "%d, " // y
-                "%d, " // width
-                "%d, " // height
-                "%s, " // state
-                "%s, " // decorated
-                "%d, " // monitor id
-                "%d, " // monitor x
-                "%d, " // monitor y
-                "%d, " // monitor width
-                "%d",  // monitor height
-                (unsigned int)c->window, c->geom.x, c->geom.y, c->geom.width, c->geom.height, state, decorated,
-                mon, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height);
-    }
+    size = asprintf(&str,
+            "0x%08x, " // window id
+            "%d, " // x
+            "%d, " // y
+            "%d, " // width
+            "%d, " // height
+            "%s, " // state
+            "%s, " // decorated
+            "%d, " // monitor id
+            "%d, " // monitor x
+            "%d, " // monitor y
+            "%d, " // monitor width
+            "%d",  // monitor height
+            (unsigned int)c->window, c->geom.x, c->geom.y, c->geom.width, c->geom.height, state, decorated,
+            mon, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height);
 
     if (size == -1) {
         LOGN("asprintf returned -1, could not report window status");
