@@ -668,7 +668,7 @@ handle_button_press(XEvent *e)
     ocw = c->geom.width;
     och = c->geom.height;
     last_motion = ev.xmotion.time;
-    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, move_cursor, CurrentTime) != GrabSuccess)
+    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
         return;
     do {
         XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask, &ev);
@@ -712,7 +712,6 @@ handle_button_press(XEvent *e)
                     else
                         client_resize_absolute(c, ocw + nw, och + nh);
                 }
-                XFlush(display);
                 break;
         }
     } while (ev.type != ButtonRelease);
