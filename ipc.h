@@ -7,11 +7,9 @@
 
 enum IPCCommand
 {
-    IPCWindowMoveRelative,
     IPCWindowMoveAbsolute,
     IPCWindowMonocle,
     IPCWindowRaise,
-    IPCWindowResizeRelative,
     IPCWindowResizeAbsolute,
     IPCWindowToggleDecorations,
     IPCFocusColor,

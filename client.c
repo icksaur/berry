@@ -40,9 +40,7 @@ struct command {
 };
 
 static const struct command command_table[] = {
-    { "window_move",            IPCWindowMoveRelative,      false, 2, fn_int     },
     { "window_move_absolute",   IPCWindowMoveAbsolute,      false, 2, fn_int     },
-    { "window_resize",          IPCWindowResizeRelative,    false, 2, fn_int     },
     { "window_resize_absolute", IPCWindowResizeAbsolute,    false, 2, fn_int     },
     { "window_raise",           IPCWindowRaise,             false, 0, NULL       },
     { "window_monocle",         IPCWindowMonocle,           false, 0, NULL       },
