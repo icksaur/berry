@@ -42,7 +42,6 @@ enum IPCCommand
     IPCEdgeGap,
     IPCSmartPlace,
     IPCDrawText,
-    IPCEdgeLock,
     IPCSetFont,
     IPCNameDesktop,
     IPCQuit,

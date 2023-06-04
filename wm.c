@@ -700,17 +700,11 @@ handle_button_press(XEvent *e)
                     if (c->mono) {
                         client_resize_absolute(c, c->prev.width, c->prev.height);
                     }
-                    if (conf.edge_lock)
-                        client_move_relative(c, nx - c->geom.x, ny - c->geom.y);
-                    else
-                        client_move_absolute(c, nx, ny);
+                    client_move_absolute(c, nx, ny);
                 } else if (state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button) {
                     nw = ev.xmotion.x - x;
                     nh = ev.xmotion.y - y;
-                    if (conf.edge_lock)
-                        client_resize_relative(c, nw - c->geom.width + ocw, nh - c->geom.height + och);
-                    else
-                        client_resize_absolute(c, ocw + nw, och + nh);
+                    client_resize_absolute(c, ocw + nw, och + nh);
                 }
                 break;
         }
@@ -1155,9 +1149,6 @@ ipc_config(long *d)
         case IPCTopGap:
             conf.top_gap = d[2];
             break;
-        case IPCEdgeLock:
-            conf.edge_lock = d[2];
-            break;
         case IPCManage:
             conf.manage[(int)d[2]] = true;
             break;
@@ -1501,34 +1492,7 @@ client_move_absolute(struct client *c, int x, int y)
 static void
 client_move_relative(struct client *c, int x, int y)
 {
-    /* Constrain the current client to the w/h of display */
-    /* God this is soooo ugly */
-    if (conf.edge_lock) {
-        int dx, dy, mon;
-        mon = ws_m_list[c->ws];
-
-        /* Lock on the right side of the screen */
-        if (c->geom.x + c->geom.width + x > m_list[mon].width + m_list[mon].x - conf.right_gap)
-            dx = m_list[mon].width + m_list[mon].x - c->geom.width - conf.right_gap;
-        /* Lock on the left side of the screen */
-        else if (c->geom.x + x < m_list[mon].x + conf.left_gap)
-            dx = m_list[mon].x + conf.left_gap;
-        else
-            dx = c->geom.x + x;
-
-        /* Lock on the bottom of the screen */
-        if (c->geom.y + c->geom.height + y > m_list[mon].height + m_list[mon].y - conf.bot_gap)
-            dy = m_list[mon].height + m_list[mon].y - conf.bot_gap - c->geom.height;
-        /* Lock on the top of the screen */
-        else if (c->geom.y + y < m_list[mon].y + conf.top_gap)
-            dy = m_list[mon].y + conf.top_gap;
-        else
-            dy = c->geom.y + y;
-
-        client_move_absolute(c, dx, dy);
-    } else {
-        client_move_absolute(c, c->geom.x + x, c->geom.y + y);
-    }
+    client_move_absolute(c, c->geom.x + x, c->geom.y + y);
 }
 
 static void
@@ -1828,32 +1792,7 @@ client_resize_absolute(struct client *c, int w, int h)
 static void
 client_resize_relative(struct client *c, int w, int h)
 {
-    if (conf.edge_lock) {
-        int dw, dh, mon;
-        mon = ws_m_list[c->ws];
-
-        /* First, check if the resize will exceed the dimensions set by
-         * the right side of the given monitor. If they do, cap the resize
-         * amount to move only to the edge of the monitor.
-         */
-        if (c->geom.x + c->geom.width + w > m_list[mon].x + m_list[mon].width - conf.right_gap)
-            dw = m_list[mon].x + m_list[mon].width - c->geom.x - conf.right_gap;
-        else
-            dw = c->geom.width + w;
-
-        /* Next, check if the resize will exceed the dimensions set by
-         * the bottom side of the given monitor. If they do, cap the resize
-         * amount to move only to the edge of the monitor.
-         */
-        if (c->geom.y + c->geom.height + conf.t_height + h > m_list[mon].y + m_list[mon].height - conf.bot_gap)
-            dh = m_list[mon].height + m_list[mon].y - c->geom.y - conf.bot_gap;
-        else
-            dh = c->geom.height + h;
-
-        client_resize_absolute(c, dw, dh);
-    } else {
-        client_resize_absolute(c, c->geom.width + w, c->geom.height + h);
-    }
+    client_resize_absolute(c, c->geom.width + w, c->geom.height + h);
 }
 
 static void
@@ -1990,7 +1929,6 @@ setup(void)
     conf.m_step           = MOVE_STEP;
     conf.r_step           = RESIZE_STEP;
     conf.focus_new        = FOCUS_NEW;
-    conf.edge_lock        = EDGE_LOCK;
     conf.t_center         = TITLE_CENTER;
     conf.top_gap          = TOP_GAP;
     conf.bot_gap          = BOT_GAP;
