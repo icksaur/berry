@@ -391,6 +391,9 @@ client_decorations_create(struct client *c)
     c->decorated = true;
     XSelectInput (display, c->dec, ExposureMask|EnterWindowMask);
     XGrabButton(display, 1, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+    XGrabButton(display, 2, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+    XGrabButton(display, 3, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+
     draw_text(c, true);
     ewmh_set_frame_extents(c);
     client_set_status(c);
@@ -670,12 +673,24 @@ handle_button_press(XEvent *e)
         XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask, &ev);
         switch (ev.type) {
             case ButtonRelease:
-                current_time = ev.xbutton.time;
-                if (current_time - last_release < DOUBLECLICK_INTERVAL) {
-                    client_monocle(c);
-                    continue;
+                LOGP("button released: %d", ev.xbutton.button);
+                switch (ev.xbutton.button) {
+                    case 1:
+                        current_time = ev.xbutton.time;
+                        if (current_time - last_release < DOUBLECLICK_INTERVAL)
+                        {
+                            client_monocle(c);
+                            continue;
+                        }
+                        last_release = current_time;
+                        break;
+                    case 2:
+                        client_close(c);
+                        break;
+                    case 3:
+                        client_send_to_ws(c, ((c->ws + 1) % WORKSPACE_NUMBER));
+                        break;
                 }
-                last_release = current_time;
                 break;
             case ConfigureRequest:
             case Expose:
