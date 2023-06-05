@@ -680,7 +680,7 @@ handle_button_press(XEvent *e)
                 switch (ev.xbutton.button) {
                     case 1: // double-click monocle
                         current_time = ev.xbutton.time;
-                        if (current_time - last_release < DOUBLECLICK_INTERVAL) 
+                        if (current_time - last_release < DOUBLECLICK_INTERVAL) {
                             client_monocle(c);
                             continue;
                         }
