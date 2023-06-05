@@ -667,28 +667,32 @@ handle_button_press(XEvent *e)
     ocw = c->geom.width;
     och = c->geom.height;
     last_motion = ev.xmotion.time;
+    bool dragged = false;
     if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
         return;
     do {
         XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask, &ev);
         switch (ev.type) {
             case ButtonRelease:
+                if (dragged)
+                    break;
                 LOGP("button released: %d", ev.xbutton.button);
                 switch (ev.xbutton.button) {
-                    case 1:
+                    case 1: // double-click monocle
                         current_time = ev.xbutton.time;
-                        if (current_time - last_release < DOUBLECLICK_INTERVAL)
-                        {
+                        if (current_time - last_release < DOUBLECLICK_INTERVAL) 
                             client_monocle(c);
                             continue;
                         }
                         last_release = current_time;
                         break;
-                    case 2:
-                        client_close(c);
+                    case 2: // middle-click close
+                        if (ev.xbutton.subwindow == bev->window)
+                            client_close(c);
                         break;
-                    case 3:
-                        client_send_to_ws(c, ((c->ws + 1) % WORKSPACE_NUMBER));
+                    case 3: // right-click move to next workspace
+                        if (ev.xbutton.subwindow == bev->window)
+                            client_send_to_ws(c, ((c->ws + 1) % WORKSPACE_NUMBER));
                         break;
                 }
                 break;
@@ -712,10 +716,13 @@ handle_button_press(XEvent *e)
                         client_resize_absolute(c, c->prev.width, c->prev.height);
                     }
                     client_move_absolute(c, nx, ny);
-                } else if (state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button) {
+                    dragged = true;
+                }
+                else if (state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button) {
                     nw = ev.xmotion.x - x;
                     nh = ev.xmotion.y - y;
                     client_resize_absolute(c, ocw + nw, och + nh);
+                    dragged = true;
                 }
                 break;
         }
@@ -780,7 +787,6 @@ handle_configure_notify(XEvent *e)
         display_width = ev->width;
         display_height = ev->height;
     }
-
 
     LOGN("Handling configure notify event");
 
