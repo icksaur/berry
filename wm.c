@@ -585,8 +585,10 @@ handle_client_message(XEvent *e)
 {
     XClientMessageEvent *cme = &e->xclient;
     long cmd, *data;
-
-    if (cme->message_type == net_berry[BerryClientEvent]) {
+    LOGP("client message is %lu", cme->message_type);
+    LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
+    if (cme->message_type == net_berry[BerryClientEvent])
+    {
         LOGN("Recieved event from berryc");
         if (cme->format != 32) {
 			LOGN("Wrong format, ignoring event");
@@ -595,7 +597,9 @@ handle_client_message(XEvent *e)
         cmd = cme->data.l[0];
         data = cme->data.l;
         ipc_handler[cmd](data);
-    } else if (cme->message_type == net_atom[NetWMState]) {
+    }
+    else if (cme->message_type == net_atom[NetWMState])
+    {
         struct client* c = get_client_from_window(cme->window);
         if (c == NULL) {
             LOGN("client not found...");
@@ -619,16 +623,20 @@ handle_client_message(XEvent *e)
                 LOGN("type 2");
             }
         }
-    } else if (cme->message_type == net_atom[NetActiveWindow]) {
+    }
+    else if (cme->message_type == net_atom[NetActiveWindow])
+    {
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
         client_manage_focus(c);
-
-    } else if (cme->message_type == net_atom[NetCurrentDesktop]) {
+    }
+    else if (cme->message_type == net_atom[NetCurrentDesktop])
+    {
         switch_ws(cme->data.l[0]);
-
-    } else if (cme->message_type == net_atom[NetWMMoveResize]) {
+    }
+    else if (cme->message_type == net_atom[NetWMMoveResize])
+    {
         LOGN("Handling MOVERESIZE");
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL)
@@ -636,6 +644,21 @@ handle_client_message(XEvent *e)
         data = cme->data.l;
         client_move_absolute(c, data[1], data[2]);
         client_resize_absolute(c, data[3], data[4]);
+    }
+    else if (cme->message_type == wm_atom[WMChangeState])
+    {
+        struct client *c = get_client_from_window(cme->window);
+        if (c == NULL)
+            return;
+        if (c->hidden)
+        {
+            client_show(c);
+            return;
+        }
+        else
+        {
+            client_hide(c);
+        }
     }
 }
 
@@ -692,7 +715,7 @@ handle_button_press(XEvent *e)
                         break;
                     case 3: // right-click move to next workspace
                         if (ev.xbutton.subwindow == bev->window)
-                            client_send_to_ws(c, ((c->ws + 1) % WORKSPACE_NUMBER));
+                            client_hide(c);
                         break;
                 }
                 break;
@@ -752,6 +775,12 @@ handle_focus(XEvent *e)
 {
     XFocusChangeEvent *ev = &e->xfocus;
     UNUSED(ev);
+
+    LOGN("Handling focus event");
+    struct client *c = get_client_from_window(ev->window);
+    if (c->hidden) {
+        client_show(c);
+    }
     return;
 }
 
@@ -995,6 +1024,7 @@ ipc_window_hide(long *d)
     if (f_client == NULL)
         return;
     client_hide(f_client);
+    client_manage_focus(NULL);
 }
 
 static void
@@ -1793,7 +1823,6 @@ run(void)
         XNextEvent(display, &e);
         LOGP("Receieved new %d event", e.type);
         if (event_handler[e.type]) {
-            LOGP("Handling %d event", e.type);
             event_handler[e.type](&e);
         }
     }
@@ -1986,6 +2015,7 @@ setup(void)
     wm_atom[WMDeleteWindow]          = XInternAtom(display, "WM_DELETE_WINDOW", False);
     wm_atom[WMTakeFocus]             = XInternAtom(display, "WM_TAKE_FOCUS", False);
     wm_atom[WMProtocols]             = XInternAtom(display, "WM_PROTOCOLS", False);
+    wm_atom[WMChangeState]           = XInternAtom(display, "WM_CHANGE_STATE", False);
 
     /* Internal berry atoms */
     net_berry[BerryWindowStatus]     = XInternAtom(display, "BERRY_WINDOW_STATUS", False);

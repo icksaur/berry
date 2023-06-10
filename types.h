@@ -64,6 +64,7 @@ enum atoms_wm {
     WMDeleteWindow,
     WMProtocols,
     WMTakeFocus,
+    WMChangeState,
     WMLast,
 };
 
