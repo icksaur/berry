@@ -694,7 +694,7 @@ handle_button_press(XEvent *e)
     if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
         return;
     do {
-        XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask, &ev);
+        XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask|FocusChangeMask, &ev);
         switch (ev.type) {
             case ButtonRelease:
                 if (dragged)
@@ -719,6 +719,7 @@ handle_button_press(XEvent *e)
                         break;
                 }
                 break;
+            case FocusIn:
             case ConfigureRequest:
             case Expose:
             case MapRequest:
@@ -2093,7 +2094,10 @@ client_snap_right(struct client *c)
 static void
 switch_ws(int ws)
 {
-    for (int i = 0; i < WORKSPACE_NUMBER; i++) {
+    if (curr_ws == ws)
+        return;
+    for (int i = 0; i < WORKSPACE_NUMBER; i++)
+    {
         if (i != ws && ws_m_list[i] == ws_m_list[ws]) {
         /*if (i != ws) {*/
             for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
