@@ -778,7 +778,10 @@ handle_focus(XEvent *e)
 
     LOGN("Handling focus event");
     struct client *c = get_client_from_window(ev->window);
-    if (c->hidden) {
+    if (c == NULL)
+        return;
+    if (c->hidden)
+    {
         client_show(c);
     }
     return;
