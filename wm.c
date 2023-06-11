@@ -105,10 +105,8 @@ static void handle_property_notify(XEvent *e);
 static void handle_enter_notify(XEvent *e);
 
 /* IPC client functions */
-static void ipc_move_absolute(long *d);
 static void ipc_monocle(long *d);
 static void ipc_raise(long *d);
-static void ipc_resize_absolute(long *d);
 static void ipc_toggle_decorations(long *d);
 static void ipc_window_close(long *d);
 static void ipc_window_center(long *d);
@@ -175,10 +173,8 @@ static const x11_event_handler_t event_handler [LASTEvent] = {
 };
 
 static const ipc_event_handler_t ipc_handler [IPCLast] = {
-    [IPCWindowMoveAbsolute]       = ipc_move_absolute,
     [IPCWindowMonocle]            = ipc_monocle,
     [IPCWindowRaise]              = ipc_raise,
-    [IPCWindowResizeAbsolute]     = ipc_resize_absolute,
     [IPCWindowToggleDecorations]  = ipc_toggle_decorations,
     [IPCWindowClose]              = ipc_window_close,
     [IPCWindowCenter]             = ipc_window_center,
@@ -866,20 +862,6 @@ client_hide(struct client *c)
 }
 
 static void
-ipc_move_absolute(long *d)
-{
-    int x, y;
-
-    if (f_client == NULL)
-        return;
-
-    x = d[1];
-    y = d[2];
-
-    client_move_absolute(f_client, x, y);
-}
-
-static void
 ipc_monocle(long *d)
 {
     UNUSED(d);
@@ -897,20 +879,6 @@ ipc_raise(long *d)
         return;
 
     client_raise(f_client);
-}
-
-static void
-ipc_resize_absolute(long *d)
-{
-    int w, h;
-
-    if (f_client == NULL)
-        return;
-
-    w = d[1];
-    h = d[2];
-
-    client_resize_absolute(f_client, w, h);
 }
 
 static void
