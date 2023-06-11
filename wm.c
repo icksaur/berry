@@ -53,7 +53,6 @@ static Time last_release = 0; /* double-click detection */
 /* All functions */
 
 /* Client management functions */
-static void client_cardinal_focus(struct client *c, int dir);
 static void client_center(struct client *c);
 static void client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h);
 static void client_close(struct client *c);
@@ -120,7 +119,6 @@ static void ipc_fullscreen(long *d);
 static void ipc_fullscreen_state(long *d);
 static void ipc_snap_left(long *d);
 static void ipc_snap_right(long *d);
-static void ipc_cardinal_focus(long *d);
 static void ipc_cycle_focus(long *d);
 static void ipc_pointer_focus(long *d);
 static void ipc_config(long *d);
@@ -190,7 +188,6 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCFullscreenState]          = ipc_fullscreen_state,
     [IPCSnapLeft]                 = ipc_snap_left,
     [IPCSnapRight]                = ipc_snap_right,
-    [IPCCardinalFocus]            = ipc_cardinal_focus,
     [IPCCycleFocus]               = ipc_cycle_focus,
     [IPCPointerFocus]             = ipc_pointer_focus,
     [IPCSaveMonitor]              = ipc_save_monitor,
@@ -199,68 +196,6 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCConfig]                   = ipc_config,
     [IPCWindowHide]               = ipc_window_hide,
 };
-
-static unsigned
-euclidean_distance(const struct client *a, const struct client *b)
-{
-    int dx = a->geom.x - b->geom.x, dy = a->geom.y - b->geom.y;
-    return dx*dx + dy*dy;
-}
-
-/* Give focus to the given client in the given direction */
-static void
-client_cardinal_focus(struct client *c, int dir)
-{
-    struct client *tmp, *focus_next;
-    int min;
-
-    tmp = c_list[curr_ws];
-    focus_next = NULL;
-    min = INT_MAX;
-
-    while (tmp != NULL) {
-        int dist = euclidean_distance(c, tmp);
-        switch (dir) {
-            case EAST:
-                LOGN("Focusing EAST");
-                if (tmp->geom.x > c->geom.x && dist < min) {
-                    min = dist;
-                    focus_next = tmp;
-                }
-                break;
-            case SOUTH:
-                LOGN("Focusing SOUTH");
-                if (tmp->geom.y > c->geom.y && dist < min) {
-                    min = dist;
-                    focus_next = tmp;
-                }
-                break;
-            case WEST:
-                LOGN("Focusing WEST");
-                if (tmp->geom.x < c->geom.x && dist < min) {
-                    min = dist;
-                    focus_next = tmp;
-                }
-                break;
-            case NORTH:
-                LOGN("Focusing NORTH");
-                if (tmp->geom.y < c->geom.y && dist < min) {
-                    min = dist;
-                    focus_next = tmp;
-                }
-                break;
-        }
-        tmp = tmp->next;
-    }
-
-    if (focus_next == NULL) {
-        LOGN("Cannot cardinal focus, no valid windows found");
-        return;
-    } else {
-        LOGP("Valid window found in direction %d, focusing", dir);
-        client_manage_focus(focus_next);
-    }
-}
 
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
@@ -1074,13 +1009,6 @@ ipc_snap_right(long *d)
         return;
 
     client_snap_right(f_client);
-}
-
-static void
-ipc_cardinal_focus(long *d)
-{
-    int dir = d[1];
-    client_cardinal_focus(f_client, dir);
 }
 
 static void
