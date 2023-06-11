@@ -551,18 +551,6 @@ focus_next(struct client *c)
     client_manage_focus(tmp);
 }
 
-static void
-focus_best(struct client *c)
-{
-    if (c == NULL)
-        return;
-
-    if (c_list[c->ws]->next == NULL)
-        return;
-    else
-        client_manage_focus(c_list[c->ws]->next);
-}
-
 /* Returns the struct client associated with the given struct Window */
 static struct client*
 get_client_from_window(Window w)
@@ -872,7 +860,7 @@ handle_map_request(XEvent *e)
     /*LOGN("Handling map request event");*/
 
     if (!XGetWindowAttributes(display, ev->window, &wa))
-        return;
+        return; 
     if (wa.override_redirect)
         return;
 
@@ -887,8 +875,6 @@ handle_unmap_notify(XEvent *e)
     c = get_client_from_window(ev->window);
 
     if (c != NULL) {
-        LOGN("Client found while unmapping, focusing next client");
-        focus_best(c);
         if (c->decorated)
             client_decorations_destroy(c);
         client_delete(c);
@@ -1668,29 +1654,8 @@ static void
 client_raise(struct client *c)
 {
     if (c != NULL) {
-        if (!c->decorated) {
-            XRaiseWindow(display, c->window);
-        } else {
-            // how may active clients are there on our workspace
-            int count, i;
-            count = 0;
-            for (struct client *tmp = c_list[c->ws]; tmp != NULL; tmp = tmp->next) {
-                count++;
-            }
-
-            if (count == 0)
-                return;
-
-            Window wins[count*2];
-
-            i = 0;
-            for (struct client *tmp = c_list[c->ws]; tmp != NULL; tmp = tmp->next) {
-                wins[i] = tmp->window;
-                wins[i+1] = tmp->dec;
-                i += 2;
-            }
-            XRestackWindows(display, wins, count*2);
-        }
+        XRaiseWindow(display, c->dec);
+        XRaiseWindow(display, c->window);
     }
 }
 
