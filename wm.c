@@ -271,15 +271,12 @@ draw_text(struct client *c, bool focused)
             break;
     }
 
-    LOGP("Text height is %u", extents.height);
-
     if (extents.y > conf.t_height) {
         LOGN("Text is taller than title bar height, not drawing text");
         return;
     }
 
-    LOGN("Drawing text on client");
-    LOGN("Drawing the following text");
+    LOGP("Drawing the following text with height %u:", extents.height);
     LOGP("   %s", c->title);
     XClearWindow(display, c->dec);
     draw = XftDrawCreate(display, c->dec, DefaultVisual(display, screen), DefaultColormap(display, screen));
@@ -504,11 +501,11 @@ handle_client_message(XEvent *e)
 {
     XClientMessageEvent *cme = &e->xclient;
     long cmd, *data;
-    LOGP("client message is %lu", cme->message_type);
-    LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
+    //LOGP("client message is %lu", cme->message_type);
+    //LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
     if (cme->message_type == net_berry[BerryClientEvent])
     {
-        LOGN("Recieved event from berryc");
+        //LOGN("Recieved event from berryc");
         if (cme->format != 32) {
 			LOGN("Wrong format, ignoring event");
 			return;
@@ -667,6 +664,7 @@ handle_button_press(XEvent *e)
                     client_resize_absolute(c, ocw + nw, och + nh);
                     dragged = true;
                 }
+                XFlush(display); // needed to prevent drag getting stuck?
                 break;
         }
     } while (ev.type != ButtonRelease);
@@ -696,14 +694,6 @@ handle_focus(XEvent *e)
     XFocusChangeEvent *ev = &e->xfocus;
     UNUSED(ev);
 
-    LOGN("Handling focus event");
-    struct client *c = get_client_from_window(ev->window);
-    if (c == NULL)
-        return;
-    if (c->hidden)
-    {
-        client_show(c);
-    }
     return;
 }
 
@@ -736,14 +726,13 @@ handle_configure_notify(XEvent *e)
 
     if (ev->window == root) {
         // handle display size changes by the root window
+
+        LOGN("Handling configure notify event for root window");
         display_width = ev->width;
         display_height = ev->height;
+        monitors_free();
+        monitors_setup();
     }
-
-    LOGN("Handling configure notify event");
-
-    monitors_free();
-    monitors_setup();
 }
 
 static void
@@ -755,28 +744,37 @@ handle_configure_request(XEvent *e)
 
     LOGN("Handling configure request event");
 
-
-    wc.x = ev->x;
-    wc.y = ev->y;
-    wc.width = ev->width;
-    wc.height = ev->height;
-    wc.border_width = ev->border_width;
-    wc.sibling = ev->above;
-    wc.stack_mode = ev->detail;
-    XConfigureWindow(display, ev->window, ev->value_mask, &wc);
+    if (ev->value_mask & CWX) wc.x = ev->x;
+    if (ev->value_mask & CWY) wc.y = ev->y;
+    if (ev->value_mask & CWWidth) wc.width = ev->width;
+    if (ev->value_mask & CWHeight) wc.height = ev->height;
+    if (ev->value_mask & CWBorderWidth) wc.border_width = ev->border_width;
+    if (ev->value_mask & CWSibling) wc.sibling = ev->above;
+    if (ev->value_mask & CWStackMode) wc.stack_mode = ev->detail;
+    // XConfigureWindow(display, ev->window, ev->value_mask, &wc); // Need this? XConfigureRequestEvent is in response to this?
     c = get_client_from_window(ev->window);
 
     if (c != NULL) {
         if (c->fullscreen)
             return;
 
-        client_move_relative(c,
-                wc.x - get_actual_x(c) - 2 * left_width(c),
-                wc.y - get_actual_y(c) - 2 * top_height(c));
-        client_resize_relative(c,
-                wc.width - get_actual_width(c) + 2 * get_dec_width(c),
-                wc.height - get_actual_height(c) + 2 * get_dec_height(c));
-        client_refresh(c);
+        if (ev->value_mask & (CWX|CWY|CWWidth|CWHeight))
+        {
+            client_move_relative(c,
+                    wc.x - get_actual_x(c) - 2 * left_width(c),
+                    wc.y - get_actual_y(c) - 2 * top_height(c));
+            client_resize_relative(c,
+                    wc.width - get_actual_width(c) + 2 * get_dec_width(c),
+                    wc.height - get_actual_height(c) + 2 * get_dec_height(c));
+        }
+        if (ev->value_mask & CWStackMode && ev->detail == Above)
+        {
+            if (c->hidden) {
+                client_show(c);
+            }
+        }
+
+        // client_refresh(c); // why?  We just resized.
     } else {
         LOGN("Window for configure was not found");
     }
@@ -1218,8 +1216,12 @@ client_manage_focus(struct client *c)
         client_set_input(c);
         if (conf.warp_pointer)
             warp_pointer(c);
+        if (c->hidden) {
+            client_show(c);
+        }
         ewmh_set_focus(c);
         manage_xsend_icccm(c, wm_atom[WMTakeFocus]);
+
         if (c->ws != curr_ws)
             switch_ws(c->ws);
     } else { //client is null, might happen when switching to a new workspace
@@ -1686,7 +1688,7 @@ run(void)
     XSync(display, false);
     while (running) {
         XNextEvent(display, &e);
-        LOGP("Receieved new %d event", e.type);
+        //LOGP("Receieved new %d event", e.type);
         if (event_handler[e.type]) {
             event_handler[e.type](&e);
         }
@@ -1757,7 +1759,7 @@ client_set_color(struct client *c, unsigned long i_color, unsigned long b_color)
         XSetWindowBackground(display, c->dec, i_color);
         XSetWindowBorder(display, c->dec, b_color);
         XClearWindow(display, c->dec);
-        draw_text(c, c == f_client);
+        //draw_text(c, c == f_client); //will be redrawn later anyhow
     }
 }
 
