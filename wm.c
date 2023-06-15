@@ -607,8 +607,16 @@ handle_button_press(XEvent *e)
     och = c->geom.height;
     last_motion = ev.xmotion.time;
     bool dragged = false;
-    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
+    bool lowerClick = false;
+    if (y > ocy + och - conf.b_width)
+    {
+        LOGN("Click in lower border");
+        lowerClick = true;
+    }
+    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess) {
+        LOGN("Failed to grab mouse pointer!");
         return;
+    }
     do {
         XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask|FocusChangeMask, &ev);
         switch (ev.type) {
@@ -649,19 +657,19 @@ handle_button_press(XEvent *e)
                 }
                 last_motion = current_time;
                 state       = mod_clean(ev.xbutton.state);
-                if ((state == (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || ev.xbutton.state == Button1Mask) {
+                if (lowerClick || state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button) {
+                    nw = ev.xmotion.x - x;
+                    nh = ev.xmotion.y - y;
+                    client_resize_absolute(c, ocw + nw, och + nh);
+                    dragged = true;
+                }
+                else if ((state == (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || ev.xbutton.state == Button1Mask) {
                     nx = ocx + (ev.xmotion.x - x);
                     ny = ocy + (ev.xmotion.y - y);
                     if (c->mono) {
                         client_resize_absolute(c, c->prev.width, c->prev.height);
                     }
                     client_move_absolute(c, nx, ny);
-                    dragged = true;
-                }
-                else if (state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button) {
-                    nw = ev.xmotion.x - x;
-                    nh = ev.xmotion.y - y;
-                    client_resize_absolute(c, ocw + nw, och + nh);
                     dragged = true;
                 }
                 XFlush(display); // needed to prevent drag getting stuck?
@@ -703,7 +711,7 @@ handle_property_notify(XEvent *e)
     XPropertyEvent *ev = &e->xproperty;
     struct client *c;
 
-    LOGN("Handling property notify event");
+    // LOGN("Handling property notify event");
     c = get_client_from_window(ev->window);
 
     if (c == NULL)
@@ -2035,7 +2043,7 @@ client_set_status(struct client *c)
     char *str = NULL;
     char *state, *decorated;
 
-    LOGN("Updating client status...");
+    // LOGN("Updating client status...");
 
     if (c->fullscreen)
         state = "fullscreen";
