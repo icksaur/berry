@@ -657,7 +657,7 @@ handle_button_press(XEvent *e)
                 }
                 last_motion = current_time;
                 state       = mod_clean(ev.xbutton.state);
-                if (lowerClick || state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button) {
+                if (lowerClick || (state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
                     nw = ev.xmotion.x - x;
                     nh = ev.xmotion.y - y;
                     client_resize_absolute(c, ocw + nw, och + nh);
@@ -750,7 +750,7 @@ handle_configure_request(XEvent *e)
     XConfigureRequestEvent *ev = &e->xconfigurerequest;
     XWindowChanges wc;
 
-    LOGN("Handling configure request event");
+    // LOGN("Handling configure request event");
 
     if (ev->value_mask & CWX) wc.x = ev->x;
     if (ev->value_mask & CWY) wc.y = ev->y;
@@ -759,7 +759,7 @@ handle_configure_request(XEvent *e)
     if (ev->value_mask & CWBorderWidth) wc.border_width = ev->border_width;
     if (ev->value_mask & CWSibling) wc.sibling = ev->above;
     if (ev->value_mask & CWStackMode) wc.stack_mode = ev->detail;
-    // XConfigureWindow(display, ev->window, ev->value_mask, &wc); // Need this? XConfigureRequestEvent is in response to this?
+    XConfigureWindow(display, ev->window, ev->value_mask, &wc); // Seems noisy because it makes a new configure.  This causes the window to be reconfigured to the last size when it was closed. Not sure how that works.
     c = get_client_from_window(ev->window);
 
     if (c != NULL) {
@@ -777,7 +777,8 @@ handle_configure_request(XEvent *e)
         }
         if (ev->value_mask & CWStackMode && ev->detail == Above)
         {
-            if (c->hidden) {
+            if (c->hidden)
+            {
                 client_show(c);
             }
         }
