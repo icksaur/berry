@@ -308,7 +308,7 @@ client_decorations_create(struct client *c)
 {
     LOGN("Decorating new client");
     int w = c->geom.width + 2 * conf.i_width;
-    int h = c->geom.height + 2 * conf.i_width + conf.t_height;
+    int h = c->geom.height + 2 * conf.i_width + conf.t_height + conf.bottom_height;
     int x = c->geom.x - conf.i_width - conf.b_width;
     int y = c->geom.y - conf.i_width - conf.b_width - conf.t_height;
 
@@ -608,7 +608,7 @@ handle_button_press(XEvent *e)
     last_motion = ev.xmotion.time;
     bool dragged = false;
     bool lowerClick = false;
-    if (y > ocy + och - conf.b_width)
+    if (y > ocy + och - conf.b_width - conf.i_width - conf.bottom_height)
     {
         LOGN("Click in lower border");
         lowerClick = true;
@@ -1301,7 +1301,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
     c->geom.x = wa->x;
     c->geom.y = wa->y;
     c->geom.width = wa->width + 2 * (conf.b_width + conf.i_width);
-    c->geom.height = wa->height + 2 * (conf.b_width + conf.i_width) + conf.t_height;
+    c->geom.height = wa->height + 2 * (conf.b_width + conf.i_width) + conf.t_height + conf.bottom_height;
     c->hidden = false;
     c->fullscreen = false;
     c->mono = false;
@@ -1664,7 +1664,7 @@ client_resize_absolute(struct client *c, int w, int h)
 
     if (c->decorated) {
         dw = w - (2 * conf.i_width) - (2 * conf.b_width);
-        dh = h - (2 * conf.i_width) - (2 * conf.b_width) - conf.t_height;
+        dh = h - (2 * conf.i_width) - (2 * conf.b_width) - conf.t_height - conf.bottom_height;
 
         dec_w = w - (2 * conf.b_width);
         dec_h = h - (2 * conf.b_width);
@@ -1815,6 +1815,7 @@ setup(void)
     // Setup our conf initially
     conf.b_width          = BORDER_WIDTH;
     conf.t_height         = TITLE_HEIGHT;
+    conf.bottom_height    = BOTTOM_HEIGHT;
     conf.i_width          = INTERNAL_BORDER_WIDTH;
     conf.bf_color         = BORDER_FOCUS_COLOR;
     conf.bu_color         = BORDER_UNFOCUS_COLOR;
@@ -2125,7 +2126,8 @@ static void ewmh_set_frame_extents(struct client *c)
     LOGN("Setting client frame extents");
 
     if (c->decorated) {
-        left = right = bottom = conf.b_width + conf.i_width;
+        left = right = conf.b_width + conf.i_width;
+        bottom = conf.b_width + conf.i_width + conf.bottom_height;
         top = conf.b_width + conf.i_width + conf.t_height;
     } else {
         left = right = top = bottom = 0;
@@ -2273,13 +2275,14 @@ get_dec_width(struct client *c)
 int
 get_dec_height(struct client *c)
 {
-    int t_height, b_width, i_width;
+    int t_height, b_width, i_width, b_height;
 
     t_height = c->decorated ? conf.t_height : 0;
     b_width = c->decorated ? conf.b_width : 0;
     i_width = c->decorated ? conf.i_width : 0;
+    b_height = c->decorated ? conf.bottom_height : 0;
 
-    return 2 * (b_width + i_width) + t_height;
+    return 2 * (b_width + i_width) + t_height + b_height;
 }
 
 int
