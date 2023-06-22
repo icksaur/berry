@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.in": "cpp",
+        "stdbool.h": "c",
+        "xft.h": "c",
+        "random": "c"
+    },
+    "editor.formatOnType": true,
+    "[lisp]": {
+        "editor.wordSeparators": "`|;:'\",()"
+    }
+}
