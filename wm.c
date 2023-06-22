@@ -276,8 +276,8 @@ draw_text(struct client *c, bool focused)
         return;
     }
 
-    LOGP("Drawing the following text with height %u:", extents.height);
-    LOGP("   %s", c->title);
+    //LOGP("Drawing the following text with height %u:", extents.height);
+    //LOGP("   %s", c->title);
     XClearWindow(display, c->dec);
     draw = XftDrawCreate(display, c->dec, DefaultVisual(display, screen), DefaultColormap(display, screen));
     xft_render_color = focused ? &xft_focus_color : &xft_unfocus_color;
@@ -608,13 +608,10 @@ handle_button_press(XEvent *e)
     last_motion = ev.xmotion.time;
     bool dragged = false;
     bool lowerClick = false;
-    if (y > ocy + och - conf.b_width - conf.i_width - conf.bottom_height)
-    {
-        LOGN("Click in lower border");
+    if (y > ocy + och - conf.b_width - conf.i_width - conf.bottom_height) {
         lowerClick = true;
     }
     if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess) {
-        LOGN("Failed to grab mouse pointer!");
         return;
     }
     do {
@@ -663,7 +660,7 @@ handle_button_press(XEvent *e)
                     client_resize_absolute(c, ocw + nw, och + nh);
                     dragged = true;
                 }
-                else if ((state == (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || ev.xbutton.state == Button1Mask) {
+                else if ((state == (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || bev->button == (unsigned)conf.move_button) {
                     nx = ocx + (ev.xmotion.x - x);
                     ny = ocy + (ev.xmotion.y - y);
                     if (c->mono) {
@@ -672,7 +669,7 @@ handle_button_press(XEvent *e)
                     client_move_absolute(c, nx, ny);
                     dragged = true;
                 }
-                XFlush(display); // needed to prevent drag getting stuck?
+                // XFlush(display); // not needed?
                 break;
         }
     } while (ev.type != ButtonRelease);
@@ -686,7 +683,7 @@ handle_expose(XEvent *e)
     struct client *c;
     bool focused;
 
-    LOGN("Handling expose event");
+    // LOGN("Handling expose event");
     c = get_client_from_window(ev->window);
     if (c == NULL) {
         LOGN("Expose event client not found, exiting");
@@ -750,7 +747,7 @@ handle_configure_request(XEvent *e)
     XConfigureRequestEvent *ev = &e->xconfigurerequest;
     XWindowChanges wc;
 
-    // LOGN("Handling configure request event");
+    LOGN("Handling configure request event");
 
     if (ev->value_mask & CWX) wc.x = ev->x;
     if (ev->value_mask & CWY) wc.y = ev->y;
@@ -766,11 +763,14 @@ handle_configure_request(XEvent *e)
         if (c->fullscreen)
             return;
 
-        if (ev->value_mask & (CWX|CWY|CWWidth|CWHeight))
+        if (ev->value_mask & (CWX|CWY))
         {
             client_move_relative(c,
                     wc.x - get_actual_x(c) - 2 * left_width(c),
                     wc.y - get_actual_y(c) - 2 * top_height(c));
+        }
+        if (ev->value_mask & (CWWidth|CWHeight))
+        {
             client_resize_relative(c,
                     wc.width - get_actual_width(c) + 2 * get_dec_width(c),
                     wc.height - get_actual_height(c) + 2 * get_dec_height(c));
@@ -1053,6 +1053,9 @@ ipc_config(long *d)
             break;
         case IPCTitleHeight:
             conf.t_height = d[2];
+            break;
+        case IPCBottomHeight:
+            conf.bottom_height = d[2];
             break;
         case IPCEdgeGap:
             conf.top_gap = d[2];
@@ -1662,6 +1665,11 @@ client_resize_absolute(struct client *c, int w, int h)
     int dec_w = w;
     int dec_h = h;
 
+    XSizeHints hints;
+    XGetNormalHints(display, c->window, &hints);
+    w = MAX(hints.min_width, w);
+    h = MAX(hints.min_height, h);
+
     if (c->decorated) {
         dw = w - (2 * conf.i_width) - (2 * conf.b_width);
         dh = h - (2 * conf.i_width) - (2 * conf.b_width) - conf.t_height - conf.bottom_height;
@@ -2038,6 +2046,8 @@ client_toggle_decorations(struct client *c)
 static void
 client_set_status(struct client *c)
 {
+    return;
+
     if (c == NULL)
         return;
     int size = 0;

@@ -53,6 +53,7 @@ static const struct command command_table[] = {
     { "border_width",           IPCBorderWidth,             true,  1, fn_int     },
     { "inner_border_width",     IPCInnerBorderWidth,        true,  1, fn_int     },
     { "title_height",           IPCTitleHeight,             true,  1, fn_int     },
+    { "bottom_height",          IPCBottomHeight,            true,  1, fn_int     },
     { "switch_workspace",       IPCSwitchWorkspace,         false, 1, fn_int     },
     { "send_to_workspace",      IPCSendWorkspace,           false, 1, fn_int     },
     { "fullscreen",             IPCFullscreen,              false, 0, NULL       },

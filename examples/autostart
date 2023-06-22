@@ -2,10 +2,11 @@
 
 
 # Set decoration geometry
-berryc border_width       5
-berryc inner_border_width 3
+berryc border_width       0
+berryc inner_border_width 30
 berryc title_height       30
-berryc top_gap            30
+berryc bottom_height      8
+berryc top_gap            32
 
 # Set decoration colors
 berryc focus_color         292D3E
