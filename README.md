@@ -4,8 +4,17 @@
 
 A healthy, bite-sized window manager written in C over the XLib library.
 
-![Screenshot](https://external-preview.redd.it/A8DWRA2txIQM8g_CpXPXAoC-wU7CSrjJO2UdCW8Nv7Y.png?auto=webp&s=3f65c783c54fd2df1ffe0be7a9f3dfa9ae54a22c)
+This version has a few changes which remove certain features and adds mouse-focused management features:
+
+* double-click maximize
+* right-click minimize
+* middle-click close
+* drag from max to restore previous size
+* drag below client area to resize
+* bottom-height property to extend a handle at bottom of windows for resizing
+* minimize and restore via clicking task in task managers like tint2
+* minimize berryc command
 
 # Usage
 
-For usage and documentation, please visit the project website [berrywm.org](https://berrywm.org)
+For mostly relevant usage and documentation, please visit the project website [berrywm.org](https://berrywm.org)
