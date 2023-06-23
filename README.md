@@ -2,7 +2,7 @@
     <h1>berry</h1><br>
 </div>
 
-A healthy, bite-sized window manager written in C over the XLib library.
+A healthy, bite-sized window manager written in C over the XLib library.  Originally from [berry](https://github.com/JLErvin/berry).
 
 This version has a few changes which remove certain features and adds mouse-focused management features:
 
