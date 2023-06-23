@@ -2,9 +2,16 @@
     <h1>berry</h1><br>
 </div>
 
-A healthy, bite-sized window manager written in C over the XLib library.
+A healthy, bite-sized window manager written in C over the XLib library.  Originally from [berry](https://github.com/JLErvin/berry).
 
-![Screenshot](https://external-preview.redd.it/A8DWRA2txIQM8g_CpXPXAoC-wU7CSrjJO2UdCW8Nv7Y.png?auto=webp&s=3f65c783c54fd2df1ffe0be7a9f3dfa9ae54a22c)
+This version has a few changes which remove certain features and adds mouse-focused management features:
+
+* double-click maximize/monocle
+* right-click minimize/iconify
+* drag from max/mono to restore previous size
+* bottom-height property to add a handle which can be dragged to resize
+* minimize/iconify and restore via task managers like tint
+* minimize/iconify berryc command
 
 # Usage
 
