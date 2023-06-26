@@ -315,6 +315,10 @@ client_decorations_create(struct client *c)
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
+    int xchild = conf.b_width + conf.i_width;
+    int ychild = xchild + conf.t_height;
+    XReparentWindow(display, c->window, dec, xchild, ychild);
+
     c->dec = dec;
     c->decorated = true;
     XSelectInput (display, c->dec, ExposureMask|EnterWindowMask);
@@ -417,8 +421,6 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
         to_fs = fullscreen;
     */
 
-
-    // TODO: FACTOR THIS SHIT
     if (to_fs) {
         ewmh_set_fullscreen(c, true);
         if (c->decorated && conf.fs_remove_dec) { //
@@ -568,8 +570,9 @@ handle_client_message(XEvent *e)
             return;
         if (c->hidden)
         {
+            // restore iconified client
             client_show(c);
-            return;
+            client_manage_focus(c);
         }
         else
         {
@@ -635,8 +638,10 @@ handle_button_press(XEvent *e)
                             client_close(c);
                         break;
                     case 3: // right-click move to next workspace
-                        if (ev.xbutton.subwindow == bev->window)
+                        if (ev.xbutton.subwindow == bev->window) {
                             client_hide(c);
+                            client_manage_focus(NULL);
+                        }
                         break;
                 }
                 break;
@@ -783,7 +788,7 @@ handle_configure_request(XEvent *e)
             }
         }
 
-        // client_refresh(c); // why?  We just resized.
+        client_refresh(c); // why?  We just resized. Does this prevent orphaned decoration windows?
     } else {
         LOGN("Window for configure was not found");
     }
@@ -826,7 +831,6 @@ handle_unmap_notify(XEvent *e)
         if (f_list[curr_ws] == NULL) {
             LOGN("Client not found while deleting and ws is empty, focusing root window");
             client_manage_focus(NULL);
-
         } else {
             LOGN("Client not found while deleting and ws is non-empty, doing nothing");
         }
@@ -1016,6 +1020,10 @@ ipc_pointer_focus(long *d)
             client_manage_focus(c);
             switch_ws(c->ws);
         }
+    }
+    else 
+    {
+        LOGN("Window has no client, could be orphaned decorations.");
     }
 }
 
@@ -1261,7 +1269,14 @@ manage_new_window(Window w, XWindowAttributes *wa)
                 (prop == net_atom[NetWMWindowTypeToolbar] && !conf.manage[Toolbar]) ||
                 (prop == net_atom[NetWMWindowTypeUtility] && !conf.manage[Utility]) ||
                 (prop == net_atom[NetWMWindowTypeDialog]  && !conf.manage[Dialog])  ||
-                (prop == net_atom[NetWMWindowTypeMenu]    && !conf.manage[Menu])) {
+                (prop == net_atom[NetWMWindowTypeMenu]    && !conf.manage[Menu])    ||
+                (prop == net_atom[NetWMWindowTypePopupMenu])                        ||
+                (prop == net_atom[NetWMWindowTypeDropdownMenu])                     ||
+                (prop == net_atom[NetWMWindowTypeTooltip])                          ||
+                (prop == net_atom[NetWMWindowTypeNotification])                     ||
+                (prop == net_atom[NetWMWindowTypeCombo])                            ||
+                (prop == net_atom[NetWMWindowTypeDND])
+                ) {
                 XMapWindow(display, w);
                 LOGN("Window is of type dock, toolbar, utility, menu, or splash: not managing");
                 LOGN("Mapping new window, not managed");
@@ -1394,10 +1409,12 @@ client_move_absolute(struct client *c, int x, int y)
     }
 
     /* move relative to where decorations should go */
-    XMoveWindow(display, c->window, dest_x, dest_y);
     if (c->decorated){
         XMoveWindow(display, c->dec, x, y);
+    } else {
+        XMoveWindow(display, c->window, dest_x, dest_y);
     }
+    
 
     c->geom.x = x;
     c->geom.y = y;
@@ -1564,8 +1581,29 @@ static void
 client_raise(struct client *c)
 {
     if (c != NULL) {
-        XRaiseWindow(display, c->dec);
-        XRaiseWindow(display, c->window);
+        if (!c->decorated) {
+            XRaiseWindow(display, c->window);
+        } else {
+            // how may active clients are there on our workspace
+            int count, i;
+            count = 0;
+            for (struct client *tmp = c_list[c->ws]; tmp != NULL; tmp = tmp->next) {
+                count++;
+            }
+
+            if (count == 0)
+                return;
+
+            Window wins[count*2];
+
+            i = 0;
+            for (struct client *tmp = c_list[c->ws]; tmp != NULL; tmp = tmp->next) {
+                wins[i] = tmp->window;
+                wins[i+1] = tmp->dec;
+                i += 2;
+            }
+            XRestackWindows(display, wins, count*2);
+        }
     }
 }
 
@@ -1873,28 +1911,34 @@ setup(void)
     client_manage_focus(NULL);
 
     /* ewmh supported atoms */
-    utf8string                       = XInternAtom(display, "UTF8_STRING", False);
-    net_atom[NetSupported]           = XInternAtom(display, "_NET_SUPPORTED", False);
-    net_atom[NetNumberOfDesktops]    = XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS", False);
-    net_atom[NetActiveWindow]        = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
-    net_atom[NetWMStateFullscreen]   = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
-    net_atom[NetWMMoveResize]        = XInternAtom(display, "_NET_MOVERESIZE_WINDOW", False);
-    net_atom[NetWMCheck]             = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
-    net_atom[NetCurrentDesktop]      = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
-    net_atom[NetWMState]             = XInternAtom(display, "_NET_WM_STATE", False);
-    net_atom[NetWMName]              = XInternAtom(display, "_NET_WM_NAME", False);
-    net_atom[NetClientList]          = XInternAtom(display, "_NET_CLIENT_LIST", False);
-    net_atom[NetWMWindowType]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
-    net_atom[NetWMWindowTypeDock]    = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", False);
-    net_atom[NetWMWindowTypeToolbar] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
-    net_atom[NetWMWindowTypeMenu]    = XInternAtom(display, "_NET_WM_WINDOW_TYPE_MENU", False);
-    net_atom[NetWMWindowTypeSplash]  = XInternAtom(display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
-    net_atom[NetWMWindowTypeDialog]  = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
-    net_atom[NetWMWindowTypeUtility] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
-    net_atom[NetWMDesktop]           = XInternAtom(display, "_NET_WM_DESKTOP", False);
-    net_atom[NetWMFrameExtents]      = XInternAtom(display, "_NET_FRAME_EXTENTS", False);
-    net_atom[NetDesktopNames]        = XInternAtom(display, "_NET_DESKTOP_NAMES", False);
-    net_atom[NetDesktopViewport]     = XInternAtom(display, "_NET_DESKTOP_VIEWPORT", False);
+    utf8string                              = XInternAtom(display, "UTF8_STRING", False);
+    net_atom[NetSupported]                  = XInternAtom(display, "_NET_SUPPORTED", False);
+    net_atom[NetNumberOfDesktops]           = XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS", False);
+    net_atom[NetActiveWindow]               = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
+    net_atom[NetWMStateFullscreen]          = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
+    net_atom[NetWMMoveResize]               = XInternAtom(display, "_NET_MOVERESIZE_WINDOW", False);
+    net_atom[NetWMCheck]                    = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
+    net_atom[NetCurrentDesktop]             = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
+    net_atom[NetWMState]                    = XInternAtom(display, "_NET_WM_STATE", False);
+    net_atom[NetWMName]                     = XInternAtom(display, "_NET_WM_NAME", False);
+    net_atom[NetClientList]                 = XInternAtom(display, "_NET_CLIENT_LIST", False);
+    net_atom[NetWMWindowType]               = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
+    net_atom[NetWMWindowTypeDock]           = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", False);
+    net_atom[NetWMWindowTypeToolbar]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
+    net_atom[NetWMWindowTypeMenu]           = XInternAtom(display, "_NET_WM_WINDOW_TYPE_MENU", False);
+    net_atom[NetWMWindowTypeSplash]         = XInternAtom(display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+    net_atom[NetWMWindowTypeDialog]         = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+    net_atom[NetWMWindowTypeUtility]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    net_atom[NetWMWindowTypePopupMenu]      = XInternAtom(display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
+    net_atom[NetWMWindowTypeDropdownMenu]   = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);  
+    net_atom[NetWMWindowTypeTooltip]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLIP", False);
+    net_atom[NetWMWindowTypeNotification]   = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+    net_atom[NetWMWindowTypeCombo]          = XInternAtom(display, "_NET_WM_WINDOW_TYPE_COMBO", False);
+    net_atom[NetWMWindowTypeDND]            = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DND", False);
+    net_atom[NetWMDesktop]                  = XInternAtom(display, "_NET_WM_DESKTOP", False);
+    net_atom[NetWMFrameExtents]             = XInternAtom(display, "_NET_FRAME_EXTENTS", False);
+    net_atom[NetDesktopNames]               = XInternAtom(display, "_NET_DESKTOP_NAMES", False);
+    net_atom[NetDesktopViewport]            = XInternAtom(display, "_NET_DESKTOP_VIEWPORT", False);
 
     /* Some icccm atoms */
     wm_atom[WMDeleteWindow]          = XInternAtom(display, "WM_DELETE_WINDOW", False);
