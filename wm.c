@@ -193,6 +193,8 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCWindowHide]               = ipc_window_hide,
 };
 
+#define CHILDWINDOW 0
+
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
  */
@@ -315,9 +317,11 @@ client_decorations_create(struct client *c)
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
+#if CHILDWINDOW
     int xchild = conf.b_width + conf.i_width;
     int ychild = xchild + conf.t_height;
     XReparentWindow(display, c->window, dec, xchild, ychild);
+#endif
 
     c->dec = dec;
     c->decorated = true;
@@ -604,6 +608,24 @@ handle_button_press(XEvent *e)
         switch_ws(c->ws);
         client_manage_focus(c);
     }
+
+#if CHILDWINDOW
+    int wx, wy;
+    Window child_return;
+    XQueryPointer(display, c->window, &dummy, &child_return, &x, &y, &wx, &wy, &dui);
+    int extra_width = conf.b_width + conf.i_width;
+    int extra_height = extra_width + conf.t_height + conf.bottom_height;
+
+    if (wx > 0 && wy > 0 && wx < c->geom.width - extra_width && wy < c->geom.height - extra_height)
+    {
+        LOGN("click seems to be in client area");
+        bev->window = c->window;
+        XSendEvent(display, c->window, True, ButtonPressMask, bev);
+        XSync(display, False);
+        return;
+    }
+#endif
+
     ocx = c->geom.x;
     ocy = c->geom.y;
     ocw = c->geom.width;
@@ -1411,9 +1433,11 @@ client_move_absolute(struct client *c, int x, int y)
     /* move relative to where decorations should go */
     if (c->decorated){
         XMoveWindow(display, c->dec, x, y);
-    } else {
-        XMoveWindow(display, c->window, dest_x, dest_y);
     }
+#if CHILDWINDOW
+else
+#endif
+    XMoveWindow(display, c->window, dest_x, dest_y);
     
 
     c->geom.x = x;
