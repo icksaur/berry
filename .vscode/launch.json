@@ -2,20 +2,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach to gdbserver",
-            "useExtendedRemote": true,
-            "type": "cppdbg",
-            "request": "attach",
-            "program": "/usr/local/bin/berry",
-            //"processId": "${command:pickProcess}",
-            "MIMode": "gdb",
-            "miDebuggerServerAddress": "localhost:1234",
-            "miDebuggerPath": "/usr/bin/gdb",
-            "linux": {
-                "MIMode": "gdb"
-            }
-        },
-        {
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
@@ -33,7 +19,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "build", 
+            "preLaunchTask": "build",
             "miDebuggerPath": "/usr/bin/gdb"
         }
     ]

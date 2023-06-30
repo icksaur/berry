@@ -193,7 +193,7 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCWindowHide]               = ipc_window_hide,
 };
 
-#define CHILDWINDOW 0
+#define CHILDWINDOW 1
 
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
@@ -316,6 +316,7 @@ client_decorations_create(struct client *c)
 
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
+    XMapWindow(display, dec);
 
 #if CHILDWINDOW
     int xchild = conf.b_width + conf.i_width;
@@ -325,10 +326,13 @@ client_decorations_create(struct client *c)
 
     c->dec = dec;
     c->decorated = true;
-    XSelectInput (display, c->dec, ExposureMask|EnterWindowMask);
+    XSelectInput(display, c->dec, ExposureMask|EnterWindowMask);
+    
+#if (!CHILDWINDOW)
     XGrabButton(display, 1, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, 2, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, 3, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+#endif
 
     draw_text(c, true);
     ewmh_set_frame_extents(c);
@@ -341,7 +345,11 @@ client_decorations_destroy(struct client *c)
 {
     LOGN("Removing decorations");
     c->decorated = false;
+#if (!CHILDWINDOW)
     XUnmapWindow(display, c->dec);
+#endif
+    int border = conf.b_width + conf.i_width;
+    XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height);
     XDestroyWindow(display, c->dec);
     ewmh_set_frame_extents(c);
     client_set_status(c);
@@ -448,7 +456,6 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
         }
         if (!c->decorated && conf.fs_remove_dec && c->was_fs) { //
             client_decorations_create(c);
-            XMapWindow(display, c->dec);
             client_refresh(c);
             client_raise(c);
             client_manage_focus(c);
@@ -596,12 +603,12 @@ handle_button_press(XEvent *e)
     struct client *c;
     int x, y, ocx, ocy, nx, ny, nw, nh, di, ocw, och;
     unsigned int dui, state;
-    Window dummy;
+    Window root_return, child_return;
     Time current_time, last_motion;
 
-    XQueryPointer(display, root, &dummy, &dummy, &x, &y, &di, &di, &dui);
+    XQueryPointer(display, root, &root_return, &child_return, &x, &y, &di, &di, &dui);
     LOGN("Handling button press event");
-    c = get_client_from_window(bev->window);
+    c = get_client_from_window(child_return);
     if (c == NULL)
         return;
     if (c != f_client) {
@@ -609,10 +616,9 @@ handle_button_press(XEvent *e)
         client_manage_focus(c);
     }
 
-#if CHILDWINDOW
+#if 0
     int wx, wy;
-    Window child_return;
-    XQueryPointer(display, c->window, &dummy, &child_return, &x, &y, &wx, &wy, &dui);
+    XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
     int extra_width = conf.b_width + conf.i_width;
     int extra_height = extra_width + conf.t_height + conf.bottom_height;
 
@@ -620,8 +626,7 @@ handle_button_press(XEvent *e)
     {
         LOGN("click seems to be in client area");
         bev->window = c->window;
-        XSendEvent(display, c->window, True, ButtonPressMask, bev);
-        XSync(display, False);
+        XAllowEvents(display, ReplayPointer, CurrentTime);
         return;
     }
 #endif
@@ -656,11 +661,11 @@ handle_button_press(XEvent *e)
                         last_release = current_time;
                         break;
                     case 2: // middle-click close
-                        if (ev.xbutton.subwindow == bev->window)
+                        if (ev.xbutton.subwindow == c->dec)
                             client_close(c);
                         break;
                     case 3: // right-click move to next workspace
-                        if (ev.xbutton.subwindow == bev->window) {
+                        if (ev.xbutton.subwindow == c->dec) {
                             client_hide(c);
                             client_manage_focus(NULL);
                         }
@@ -836,16 +841,9 @@ static void
 handle_unmap_notify(XEvent *e)
 {
     XUnmapEvent *ev = &e->xunmap;
-    struct client *c;
-    c = get_client_from_window(ev->window);
+    struct client *c = get_client_from_window(ev->window);
 
-    if (c != NULL) {
-        if (c->decorated)
-            client_decorations_destroy(c);
-        client_delete(c);
-        free(c);
-        client_raise(f_client);
-    } else {
+    if (c == NULL) {
         /* Some applications *ahem* Spotify *ahem*, don't seem to place nicely with being deleted.
          * They close slowing, causing focusing issues with unmap requests. Check to see if the current
          * workspace is empty and, if so, focus the root client so that we can pick up new key presses..
@@ -856,6 +854,28 @@ handle_unmap_notify(XEvent *e)
         } else {
             LOGN("Client not found while deleting and ws is non-empty, doing nothing");
         }
+        return;
+    }
+
+    if (c->reparenting) {
+        c->reparenting = false; // Reparenting generates an unmap. Consume it once.
+        LOGP("consuming unmap for %lu due to reparenting", ev->window);
+        return;
+    } else if (ev->event == root) {
+        LOGP("ignoring root unmap for %lu", ev->window);
+        return;
+    }
+
+    LOGP("handling unmap for %lu", ev->window);
+
+    if (c != NULL) {
+        if (c->decorated)
+            client_decorations_destroy(c);
+        client_delete(c);
+        free(c);
+        client_raise(f_client);
+    } else {
+
     }
 }
 
@@ -1346,8 +1366,13 @@ manage_new_window(Window w, XWindowAttributes *wa)
     c->fullscreen = false;
     c->mono = false;
     c->was_fs = false;
+    c->reparenting = false;
 
     XSetWindowBorderWidth(display, c->window, 0);
+
+#if CHILDWINDOW
+    XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+#endif
 
     if (conf.decorate)
         client_decorations_create(c);
@@ -1435,9 +1460,10 @@ client_move_absolute(struct client *c, int x, int y)
         XMoveWindow(display, c->dec, x, y);
     }
 #if CHILDWINDOW
-else
-#endif
+    else XMoveWindow(display, c->window, dest_x, dest_y);
+#else
     XMoveWindow(display, c->window, dest_x, dest_y);
+#endif
     
 
     c->geom.x = x;
@@ -1608,6 +1634,9 @@ client_raise(struct client *c)
         if (!c->decorated) {
             XRaiseWindow(display, c->window);
         } else {
+            #if CHILDWINDOW
+            XRaiseWindow(display, c->dec);
+            #else
             // how may active clients are there on our workspace
             int count, i;
             count = 0;
@@ -1627,6 +1656,7 @@ client_raise(struct client *c)
                 i += 2;
             }
             XRestackWindows(display, wins, count*2);
+            #endif
         }
     }
 }
@@ -1837,7 +1867,7 @@ client_set_color(struct client *c, unsigned long i_color, unsigned long b_color)
     if (c->decorated) {
         XSetWindowBackground(display, c->dec, i_color);
         XSetWindowBorder(display, c->dec, b_color);
-        XClearWindow(display, c->dec);
+        //XClearWindow(display, c->dec); // will cause flicker
         //draw_text(c, c == f_client); //will be redrawn later anyhow
     }
 }
@@ -2094,13 +2124,12 @@ warp_pointer(struct client *c)
 static void
 client_toggle_decorations(struct client *c)
 {
-    if (c->decorated) {
+    c->reparenting = true;
+    if (c->decorated)
         client_decorations_destroy(c);
-    } else {
+    else {
         client_decorations_create(c);
-        XMapWindow(display, c->dec);
     }
-
     client_refresh(c);
     client_raise(c);
     client_manage_focus(c);
