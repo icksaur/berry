@@ -308,7 +308,6 @@ client_close(struct client *c)
 static void
 client_decorations_create(struct client *c)
 {
-    LOGN("Decorating new client");
     int w = c->geom.width + 2 * conf.i_width;
     int h = c->geom.height + 2 * conf.i_width + conf.t_height + conf.bottom_height;
     int x = c->geom.x - conf.i_width - conf.b_width;
@@ -616,18 +615,19 @@ handle_button_press(XEvent *e)
         client_manage_focus(c);
     }
 
-#if 0
-    int wx, wy;
-    XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
-    int extra_width = conf.b_width + conf.i_width;
-    int extra_height = extra_width + conf.t_height + conf.bottom_height;
+#if CHILDWINDOW
+    if (!bev->state) {
+        int wx, wy;
+        XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
+        int extra_width = conf.b_width + conf.i_width;
+        int extra_height = extra_width + conf.t_height + conf.bottom_height;
 
-    if (wx > 0 && wy > 0 && wx < c->geom.width - extra_width && wy < c->geom.height - extra_height)
-    {
-        LOGN("click seems to be in client area");
-        bev->window = c->window;
-        XAllowEvents(display, ReplayPointer, CurrentTime);
-        return;
+        if (wx > 0 && wy > 0 && wx < c->geom.width - extra_width && wy < c->geom.height - extra_height) {
+            LOGN("click with no modifiers seems to be in client area");
+            bev->window = c->window;
+            XAllowEvents(display, ReplayPointer, CurrentTime);
+            return;
+        }
     }
 #endif
 
@@ -1339,15 +1339,21 @@ manage_new_window(Window w, XWindowAttributes *wa)
 
     // Get class information for the current window
     XClassHint ch;
-    if (XGetClassHint(display, w, &ch) > Success) {
+    bool hasClassHint = false;
+    if (XGetClassHint(display, w, &ch) > Success)
+    {
         LOGP("client has class %s", ch.res_class);
         LOGP("client has name %s", ch.res_name);
         if (ch.res_class)
             XFree(ch.res_class);
         if (ch.res_name)
             XFree(ch.res_name);
-    } else {
-        LOGN("could not retrieve client class name");
+        hasClassHint = true;
+    }
+    else
+    {
+        LOGN("could not retrieve client class hints. Not managing.");
+        return;
     }
 
     struct client *c;
@@ -1372,10 +1378,16 @@ manage_new_window(Window w, XWindowAttributes *wa)
 
 #if CHILDWINDOW
     XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+    XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
 #endif
 
-    if (conf.decorate)
-        client_decorations_create(c);
+    if (conf.decorate) {
+        if (hasClassHint) {
+            client_decorations_create(c);
+        } else {
+            LOGN("Not decorating window with no class hint");
+        }
+    }
 
     client_set_title(c);
     client_refresh(c); /* using our current factoring, w/h are set incorrectly */
@@ -2317,8 +2329,10 @@ xerror(Display *dpy, XErrorEvent *e)
             (e->request_code == X_GrabKey && e->error_code == BadAccess) ||
             (e->request_code == X_CopyArea && e->error_code == BadDrawable) ||
             (e->request_code == 139 && e->error_code == BadDrawable) ||
-            (e->request_code == 139 && e->error_code == 143))
+            (e->request_code == 139 && e->error_code == 143)) {
+        LOGN("Ignoring XErrorEvent.");
         return 0;
+    }
 
     LOGP("Fatal request. Request code=%d, error code=%d", e->request_code, e->error_code);
     return xerrorxlib(dpy, e);
