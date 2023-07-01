@@ -57,6 +57,7 @@ static void client_center(struct client *c);
 static void client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h);
 static void client_close(struct client *c);
 static void client_decorations_create(struct client *c);
+static void client_decorations_show(struct client *c);
 static void client_decorations_destroy(struct client *c);
 static void client_delete(struct client *c);
 static void client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max);
@@ -193,9 +194,6 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCWindowHide]               = ipc_window_hide,
 };
 
-#define CHILDWINDOW 1
-#define HIDEDECOR 1
-
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
  */
@@ -317,21 +315,13 @@ client_decorations_create(struct client *c)
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
-#if CHILDWINDOW
     int xchild = conf.b_width + conf.i_width;
     int ychild = xchild + conf.t_height;
     XReparentWindow(display, c->window, dec, xchild, ychild);
-#endif
 
     c->dec = dec;
     c->decorated = true;
     XSelectInput(display, c->dec, ExposureMask|EnterWindowMask);
-    
-#if (!CHILDWINDOW)
-    XGrabButton(display, 1, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-    XGrabButton(display, 2, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-    XGrabButton(display, 3, AnyModifier, c->dec, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-#endif
 
     draw_text(c, true);
     ewmh_set_frame_extents(c);
@@ -340,19 +330,30 @@ client_decorations_create(struct client *c)
     XMapWindow(display, dec);
 }
 
+/* Create new "dummy" windows to be used as decorations for the given client */
+static void
+client_decorations_show(struct client *c)
+{
+    int w = c->geom.width + 2 * conf.i_width;
+    int h = c->geom.height + 2 * conf.i_width + conf.t_height + conf.bottom_height;
+    int x = conf.i_width + conf.b_width;
+    int y = x + conf.t_height;
+
+    XMoveResizeWindow(display, c->window, x, y, w, h);
+
+    c->decorated = true;
+    draw_text(c, true);
+    ewmh_set_frame_extents(c);
+    client_set_status(c);
+}
+
 /* Destroy any "dummy" windows associated with the given Client as decorations */
 static void
 client_decorations_destroy(struct client *c)
 {
     LOGN("Removing decorations");
     c->decorated = false;
-#if (!CHILDWINDOW)
-    XUnmapWindow(display, c->dec);
-#endif
-
-    int border = conf.b_width + conf.i_width;
-    XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height);
-    XDestroyWindow(display, c->dec);
+    XMoveResizeWindow(display, c->window, 0, 0, c->geom.width, c->geom.height);     
     ewmh_set_frame_extents(c);
 
     client_set_status(c);
@@ -432,7 +433,6 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
     if (to_fs) {
         ewmh_set_fullscreen(c, true);
         if (c->decorated && conf.fs_remove_dec) {
-            c->reparenting = true;
             client_decorations_destroy(c);
             c->was_fs = true;
         }
@@ -453,8 +453,7 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
             client_resize_absolute(c, c->prev.width, c->prev.height);
         }
         if (!c->decorated && conf.fs_remove_dec && c->was_fs) {
-            c->reparenting = true;
-            client_decorations_create(c);
+            client_decorations_show(c);
             /*client_refresh(c);
             client_raise(c);
             client_manage_focus(c);*/
@@ -615,8 +614,7 @@ handle_button_press(XEvent *e)
         switch_ws(c->ws);
         client_manage_focus(c);
     }
-
-#if CHILDWINDOW
+ 
     if (!bev->state) {
         int wx, wy;
         XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
@@ -630,7 +628,9 @@ handle_button_press(XEvent *e)
             return;
         }
     }
-#endif
+
+    if (c->fullscreen)
+        return; // don't move or drag fullscreen windows
 
     ocx = c->geom.x;
     ocy = c->geom.y;
@@ -859,11 +859,7 @@ handle_unmap_notify(XEvent *e)
         return;
     }
 
-    if (c->reparenting) {
-        c->reparenting = false; // Reparenting generates an unmap. Consume it once.
-        LOGP("consuming unmap for %lu due to reparenting", ev->window);
-        return;
-    } else if (ev->event == root) {
+    if (ev->event == root) {
         LOGP("ignoring root unmap for %lu", ev->window);
         return;
     }
@@ -871,8 +867,7 @@ handle_unmap_notify(XEvent *e)
     LOGP("handling unmap for %lu", ev->window);
 
     if (c != NULL) {
-        if (c->decorated)
-            client_decorations_destroy(c);
+        XDestroyWindow(display, c->dec);
         client_delete(c);
         free(c);
         client_raise(f_client);
@@ -1374,14 +1369,12 @@ manage_new_window(Window w, XWindowAttributes *wa)
     c->fullscreen = false;
     c->mono = false;
     c->was_fs = false;
-    c->reparenting = false;
 
     XSetWindowBorderWidth(display, c->window, 0);
 
-#if CHILDWINDOW
+    // intercept move mask clicks for managing the window, and single-click for focusing
     XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
     XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
-#endif
 
     if (conf.decorate) {
         if (hasClassHint) {
@@ -1400,9 +1393,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
 
     // not sure we need this when parenting to decoration
     XMapWindow(display, c->window);
-    if (c->decorated) {
-        XMapWindow(display, c->dec);
-    }
+    XMapWindow(display, c->dec);
 
     XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
@@ -1463,24 +1454,7 @@ ungrab_buttons(void)
 static void
 client_move_absolute(struct client *c, int x, int y)
 {
-    int dest_x = x;
-    int dest_y = y;
-
-    if (c->decorated) {
-        dest_x = x + conf.i_width + conf.b_width;
-        dest_y = y + conf.i_width + conf.b_width + conf.t_height;
-    }
-
-    /* move relative to where decorations should go */
-    if (c->decorated){
-        XMoveWindow(display, c->dec, x, y);
-    }
-#if CHILDWINDOW
-    else XMoveWindow(display, c->window, dest_x, dest_y);
-#else
-    XMoveWindow(display, c->window, dest_x, dest_y);
-#endif
-    
+    XMoveWindow(display, c->dec, x, y);
 
     c->geom.x = x;
     c->geom.y = y;
@@ -1650,29 +1624,7 @@ client_raise(struct client *c)
         if (!c->decorated) {
             XRaiseWindow(display, c->window);
         } else {
-            #if CHILDWINDOW
             XRaiseWindow(display, c->dec);
-            #else
-            // how may active clients are there on our workspace
-            int count, i;
-            count = 0;
-            for (struct client *tmp = c_list[c->ws]; tmp != NULL; tmp = tmp->next) {
-                count++;
-            }
-
-            if (count == 0)
-                return;
-
-            Window wins[count*2];
-
-            i = 0;
-            for (struct client *tmp = c_list[c->ws]; tmp != NULL; tmp = tmp->next) {
-                wins[i] = tmp->window;
-                wins[i+1] = tmp->dec;
-                i += 2;
-            }
-            XRestackWindows(display, wins, count*2);
-            #endif
         }
     }
 }
@@ -1743,7 +1695,7 @@ refresh_config(void)
              * them all to the current desktop and then back agian */
             if (tmp->decorated && conf.decorate) {
                 client_decorations_destroy(tmp);
-                client_decorations_create(tmp);
+                client_decorations_show(tmp);
                 XMapWindow(display, tmp->dec);
             }
 
@@ -1788,10 +1740,7 @@ client_resize_absolute(struct client *c, int w, int h)
 
     /*LOGN("Resizing client main window");*/
     XResizeWindow(display, c->window, MAX(dw, MINIMUM_DIM), MAX(dh, MINIMUM_DIM));
-    if (c->decorated) {
-        /*LOGN("Resizing client decoration");*/
-        XResizeWindow(display, c->dec, MAX(dec_w, MINIMUM_DIM), MAX(dec_h, MINIMUM_DIM));
-    }
+    XResizeWindow(display, c->dec, MAX(dec_w, MINIMUM_DIM), MAX(dec_h, MINIMUM_DIM));
 
     c->geom.width = MAX(w, MINIMUM_DIM);
     c->geom.height = MAX(h, MINIMUM_DIM);
@@ -2140,11 +2089,10 @@ warp_pointer(struct client *c)
 static void
 client_toggle_decorations(struct client *c)
 {
-    c->reparenting = true;
     if (c->decorated)
         client_decorations_destroy(c);
     else {
-        client_decorations_create(c);
+        client_decorations_show(c);
     }
     client_refresh(c);
     client_raise(c);
