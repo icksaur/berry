@@ -194,6 +194,7 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
 };
 
 #define CHILDWINDOW 1
+#define HIDEDECOR 1
 
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
@@ -315,7 +316,6 @@ client_decorations_create(struct client *c)
 
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
-    XMapWindow(display, dec);
 
 #if CHILDWINDOW
     int xchild = conf.b_width + conf.i_width;
@@ -336,6 +336,8 @@ client_decorations_create(struct client *c)
     draw_text(c, true);
     ewmh_set_frame_extents(c);
     client_set_status(c);
+
+    XMapWindow(display, dec);
 }
 
 /* Destroy any "dummy" windows associated with the given Client as decorations */
@@ -347,10 +349,12 @@ client_decorations_destroy(struct client *c)
 #if (!CHILDWINDOW)
     XUnmapWindow(display, c->dec);
 #endif
+
     int border = conf.b_width + conf.i_width;
     XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height);
     XDestroyWindow(display, c->dec);
     ewmh_set_frame_extents(c);
+
     client_set_status(c);
 }
 
@@ -416,29 +420,24 @@ monitors_free(void)
 static void
 client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
 {
+    LOGP("fullscreen: toggle: %d fullscreen: %d, max: %d", toggle, fullscreen, max);
+
     int mon;
     bool to_fs;
     mon = ws_m_list[c->ws];
     UNUSED(max);
-    // save the old geometry values so that we can toggle between fulscreen mode
 
     to_fs = toggle ? !c->fullscreen : fullscreen;
 
-    /* I'm going to keep this comment here for readability
-     * for the previous ternary statement
-    if (toggle)
-        to_fs = !c->fullscreen;
-    else
-        to_fs = fullscreen;
-    */
-
     if (to_fs) {
         ewmh_set_fullscreen(c, true);
-        if (c->decorated && conf.fs_remove_dec) { //
+        if (c->decorated && conf.fs_remove_dec) {
+            c->reparenting = true;
             client_decorations_destroy(c);
             c->was_fs = true;
         }
         if (conf.fs_max) {
+            // save the old geometry values so that we can toggle between fulscreen mode
             c->prev.x = c->geom.x;
             c->prev.y = c->geom.y;
             c->prev.width = c->geom.width;
@@ -453,20 +452,21 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
             client_move_absolute(c, c->prev.x, c->prev.y);
             client_resize_absolute(c, c->prev.width, c->prev.height);
         }
-        if (!c->decorated && conf.fs_remove_dec && c->was_fs) { //
+        if (!c->decorated && conf.fs_remove_dec && c->was_fs) {
+            c->reparenting = true;
             client_decorations_create(c);
-            client_refresh(c);
+            /*client_refresh(c);
             client_raise(c);
-            client_manage_focus(c);
+            client_manage_focus(c);*/
             ewmh_set_frame_extents(c);
         }
 
         c->fullscreen = false;
         c->was_fs = false;
-        client_refresh(c);
+        //client_refresh(c);
     }
 
-    client_set_status(c);
+    //client_set_status(c);
 }
 
 /* Focus the next window in the list. Windows are sorted by the order in which they are
@@ -499,7 +499,8 @@ get_client_from_window(Window w)
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
             if (tmp->window == w)
                 return tmp;
-            else if (tmp->decorated && tmp->dec == w)
+            //else if (tmp->decorated && tmp->dec == w)
+            else if (tmp->dec == w)
                 return tmp;
         }
     }
@@ -718,9 +719,10 @@ handle_expose(XEvent *e)
     // LOGN("Handling expose event");
     c = get_client_from_window(ev->window);
     if (c == NULL) {
-        LOGN("Expose event client not found, exiting");
+        LOGN("Expose event client not found");
         return;
     }
+    LOGN("expose client: focusing");
     focused = c == f_client;
     draw_text(c, focused);
 }
@@ -1396,10 +1398,12 @@ manage_new_window(Window w, XWindowAttributes *wa)
     ewmh_set_desktop(c, c->ws);
     ewmh_set_client_list();
 
-    if (conf.decorate)
-        XMapWindow(display, c->dec);
-
+    // not sure we need this when parenting to decoration
     XMapWindow(display, c->window);
+    if (c->decorated) {
+        XMapWindow(display, c->dec);
+    }
+
     XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
