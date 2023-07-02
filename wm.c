@@ -194,6 +194,8 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCWindowHide]               = ipc_window_hide,
 };
 
+#define CHILDWINDOW 0
+
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
  */
@@ -315,9 +317,11 @@ client_decorations_create(struct client *c)
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
+#if CHILDWINDOW
     int xchild = conf.b_width + conf.i_width;
     int ychild = xchild + conf.t_height;
     XReparentWindow(display, c->window, dec, xchild, ychild);
+#endif
 
     c->dec = dec;
     c->decorated = true;
@@ -474,11 +478,11 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
 static void
 focus_next(struct client *c)
 {
-    if (c == NULL)
-        return;
+    int ws = c != NULL ? c->ws : curr_ws;
 
-    int ws;
-    ws = c->ws;
+    if (c == NULL) {
+        c = f_list[ws];
+    }
 
     if (f_list[ws] == c && f_list[ws]->f_next == NULL) {
         client_manage_focus(f_list[ws]);
