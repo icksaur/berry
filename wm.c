@@ -235,7 +235,6 @@ close_wm(void)
             client_delete(c_list[i]);
     }
 
-
     XDeleteProperty(display, root, net_berry[BerryWindowStatus]);
     XDeleteProperty(display, root, net_berry[BerryFontProperty]);
     XDeleteProperty(display, root, net_atom[NetSupported]);
@@ -334,16 +333,18 @@ client_decorations_create(struct client *c)
 static void
 client_decorations_show(struct client *c)
 {
-    int w = c->geom.width + 2 * conf.i_width;
-    int h = c->geom.height + 2 * conf.i_width + conf.t_height + conf.bottom_height;
+    int borderSize = conf.b_width + conf.i_width;
+    int w = c->geom.width - borderSize;
+    int h = c->geom.height - borderSize - conf.t_height - conf.bottom_height;
     int x = conf.i_width + conf.b_width;
     int y = x + conf.t_height;
 
     XMoveResizeWindow(display, c->window, x, y, w, h);
-
     c->decorated = true;
-    draw_text(c, true);
+
+    //draw_text(c, true);
     ewmh_set_frame_extents(c);
+    //client_refresh(c); // reposition client within decoration
     client_set_status(c);
 }
 
@@ -454,10 +455,9 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
         }
         if (!c->decorated && conf.fs_remove_dec && c->was_fs) {
             client_decorations_show(c);
-            /*client_refresh(c);
             client_raise(c);
-            client_manage_focus(c);*/
-            ewmh_set_frame_extents(c);
+            client_manage_focus(c);
+            //ewmh_set_frame_extents(c);
         }
 
         c->fullscreen = false;
@@ -1699,7 +1699,7 @@ refresh_config(void)
                 XMapWindow(display, tmp->dec);
             }
 
-            client_refresh(tmp);
+            // client_refresh(tmp);
             client_show(tmp);
 
             if (f_client != tmp)
@@ -2094,10 +2094,9 @@ client_toggle_decorations(struct client *c)
     else {
         client_decorations_show(c);
     }
-    client_refresh(c);
-    client_raise(c);
-    client_manage_focus(c);
-    ewmh_set_frame_extents(c);
+    //client_raise(c);
+    //client_manage_focus(c);
+    //ewmh_set_frame_extents(c);
 }
 
 /*
@@ -2197,9 +2196,10 @@ static void ewmh_set_frame_extents(struct client *c)
     LOGN("Setting client frame extents");
 
     if (c->decorated) {
-        left = right = conf.b_width + conf.i_width;
-        bottom = conf.b_width + conf.i_width + conf.bottom_height;
-        top = conf.b_width + conf.i_width + conf.t_height;
+        int border = conf.b_width + conf.i_width;
+        left = right = border;
+        bottom = border + conf.bottom_height;
+        top = border + conf.t_height;
     } else {
         left = right = top = bottom = 0;
     }
