@@ -194,8 +194,6 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCWindowHide]               = ipc_window_hide,
 };
 
-#define CHILDWINDOW 0
-
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
  */
@@ -317,11 +315,9 @@ client_decorations_create(struct client *c)
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
-#if CHILDWINDOW
     int xchild = conf.b_width + conf.i_width;
     int ychild = xchild + conf.t_height;
     XReparentWindow(display, c->window, dec, xchild, ychild);
-#endif
 
     c->dec = dec;
     c->decorated = true;
