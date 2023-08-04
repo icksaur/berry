@@ -867,6 +867,8 @@ handle_unmap_notify(XEvent *e)
     LOGP("handling unmap for %lu", ev->window);
 
     if (c != NULL) {
+        int border = conf.b_width + conf.i_width;
+        XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height);
         XDestroyWindow(display, c->dec);
         client_delete(c);
         free(c);
