@@ -49,6 +49,9 @@ static XRenderColor r_color;
 static GC gc;
 static Atom utf8string;
 static Time last_release = 0; /* double-click detection */
+static int alt_pressed = 0; // alt-tab
+static unsigned int alt_keycode;
+static unsigned int tab_keycode;
 
 /* All functions */
 
@@ -103,6 +106,8 @@ static void handle_unmap_notify(XEvent *e);
 static void handle_reparent_notify(XEvent *e);
 static void handle_destroy_notify(XEvent *e);
 static void handle_button_press(XEvent *e);
+static void handle_key_press(XEvent *e);
+static void handle_key_release(XEvent *e);
 static void handle_expose(XEvent *e);
 static void handle_property_notify(XEvent *e);
 static void handle_enter_notify(XEvent *e);
@@ -167,6 +172,8 @@ static const x11_event_handler_t event_handler [LASTEvent] = {
     [ConfigureNotify]  = handle_configure_notify,
     [ConfigureRequest] = handle_configure_request,  
     [ClientMessage]    = handle_client_message,
+    [KeyPress]         = handle_key_press,
+    [KeyRelease]       = handle_key_release,
     [ButtonPress]      = handle_button_press,
     [PropertyNotify]   = handle_property_notify,
     [Expose]           = handle_expose,
@@ -452,6 +459,10 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
 static void
 focus_next(struct client *c)
 {
+    if (f_client == NULL) {
+        return;
+    }
+
     int ws = c != NULL ? c->ws : curr_ws;
 
     if (c == NULL) {
@@ -571,8 +582,35 @@ handle_client_message(XEvent *e)
 }
 
 static void
-handle_button_press(XEvent *e)
+handle_key_press(XEvent *e) {
+    XKeyPressedEvent *ev = &e->xkey;
+    if (ev->keycode == alt_keycode) {
+        if (!alt_pressed) {
+            alt_pressed = true;
+        }
+    } else if (ev->keycode == tab_keycode) {
+        focus_next(f_client);
+    } else if (f_client) {
+        XKeyEvent new_event = (*ev);
+        new_event.window = f_client->window;
+        XSendEvent(display, f_client->window, False, KeyPressMask, (XEvent *)&new_event);
+    }
+}
+
+static void
+handle_key_release(XEvent *e)
 {
+    XKeyReleasedEvent *ev = &e->xkey;
+    if (ev->keycode == alt_keycode) {
+        if (alt_pressed) {
+            LOGN("alt release");
+            alt_pressed = false;
+        }
+    }
+}
+
+static void
+handle_button_press(XEvent *e) {
     /* Much credit to the authors of dwm for
      * this function.
      */
@@ -1902,8 +1940,12 @@ setup(void)
     normal_cursor = XCreateFontCursor(display, XC_left_ptr);
     XDefineCursor(display, root, normal_cursor);
 
+    LOGN("selecting root input");
     XSelectInput(display, root,
-            StructureNotifyMask|SubstructureRedirectMask|SubstructureNotifyMask|ButtonPressMask|Button1Mask);
+                 StructureNotifyMask | SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask | Button1Mask);
+    XGrabKey(display, alt_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+
+    LOGN("selected root input");
     xerrorxlib = XSetErrorHandler(xerror);
 
     check = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
@@ -2420,6 +2462,9 @@ main(int argc, char *argv[])
     if (!display)
         exit(EXIT_FAILURE);
 
+    alt_keycode = XKeysymToKeycode(display, XK_Alt_L);
+    tab_keycode = XKeysymToKeycode(display, XK_Tab);
+
     LOGN("Successfully opened display");
 
     setup();
@@ -2432,7 +2477,6 @@ main(int argc, char *argv[])
     XSync(display, false);
     while (running) {
         XNextEvent(display, &e);
-        LOGP("event %d", e.type);
         switch (e.type) {
             case MapRequest: handle_map_request(&e); break;
             case DestroyNotify: handle_destroy_notify(&e); break;
@@ -2441,11 +2485,12 @@ main(int argc, char *argv[])
             case ConfigureRequest: handle_configure_request(&e); break;
             case ClientMessage: handle_client_message(&e); break;
             case ButtonPress: handle_button_press(&e); break;
+            case KeyPress: handle_key_press(&e); break;
+            case KeyRelease: handle_key_release(&e); break;
             case PropertyNotify: handle_property_notify(&e); break;
             case Expose: handle_expose(&e); break;
             case FocusIn: handle_focus(&e); break;
             case EnterNotify: handle_enter_notify(&e); break;
-            default: LOGP("e: other event %x", e.type);
         }
     }
 
