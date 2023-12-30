@@ -3,7 +3,8 @@
         "*.in": "cpp",
         "stdbool.h": "c",
         "xft.h": "c",
-        "random": "c"
+        "random": "c",
+        "utils.h": "c"
     },
     "editor.formatOnType": true,
     "[lisp]": {

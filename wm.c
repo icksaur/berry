@@ -100,6 +100,8 @@ static void handle_configure_request(XEvent *e);
 static void handle_focus(XEvent *e);
 static void handle_map_request(XEvent *e);
 static void handle_unmap_notify(XEvent *e);
+static void handle_reparent_notify(XEvent *e);
+static void handle_destroy_notify(XEvent *e);
 static void handle_button_press(XEvent *e);
 static void handle_expose(XEvent *e);
 static void handle_property_notify(XEvent *e);
@@ -128,7 +130,6 @@ static void ipc_edge_gap(long *d);
 static void monitors_free(void);
 static void monitors_setup(void);
 
-static void close_wm(void);
 static void draw_text(struct client *c, bool focused);
 static struct client* get_client_from_window(Window w);
 static void load_color(XftColor *dest_color, unsigned long raw_color);
@@ -138,7 +139,6 @@ static int manage_xsend_icccm(struct client *c, Atom atom);
 static void grab_buttons(void);
 static void ungrab_buttons(void);
 static void refresh_config(void);
-static void run(void);
 static bool safe_to_focus(int ws);
 static void setup(void);
 static void switch_ws(int ws);
@@ -146,7 +146,6 @@ static void warp_pointer(struct client *c);
 static void usage(void);
 static void version(void);
 static int xerror(Display *display, XErrorEvent *e);
-
 static int get_actual_x(struct client *c);
 static int get_actual_y(struct client *c);
 static int get_actual_width(struct client *c);
@@ -162,9 +161,11 @@ typedef void (*ipc_event_handler_t)(long *e);
 /* Native X11 Event handler */
 static const x11_event_handler_t event_handler [LASTEvent] = {
     [MapRequest]       = handle_map_request,
+    [DestroyNotify]    = handle_destroy_notify,
     [UnmapNotify]      = handle_unmap_notify,
+    [ReparentNotify]   = handle_reparent_notify,
     [ConfigureNotify]  = handle_configure_notify,
-    [ConfigureRequest] = handle_configure_request,
+    [ConfigureRequest] = handle_configure_request,  
     [ClientMessage]    = handle_client_message,
     [ButtonPress]      = handle_button_press,
     [PropertyNotify]   = handle_property_notify,
@@ -222,25 +223,6 @@ client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h)
     client_move_absolute(c, new_x, new_y);
 
     client_refresh(c); // in case we went over the top gap
-}
-
-/* Close connection to the current display */
-static void
-close_wm(void)
-{
-    LOGN("Shutting down window manager");
-
-    for (int i = 0; i < WORKSPACE_NUMBER; i++) {
-        while (c_list[i] != NULL)
-            client_delete(c_list[i]);
-    }
-
-    XDeleteProperty(display, root, net_berry[BerryWindowStatus]);
-    XDeleteProperty(display, root, net_berry[BerryFontProperty]);
-    XDeleteProperty(display, root, net_atom[NetSupported]);
-
-    LOGN("Closing display...");
-    XCloseDisplay(display);
 }
 
 static void
@@ -317,16 +299,14 @@ client_decorations_create(struct client *c)
     int xchild = conf.b_width + conf.i_width;
     int ychild = xchild + conf.t_height;
     XReparentWindow(display, c->window, dec, xchild, ychild);
+    LOGP("%x (decoration) parented to %x (client)", dec, c->window);
 
     c->dec = dec;
     c->decorated = true;
-    XSelectInput(display, c->dec, ExposureMask|EnterWindowMask);
 
     draw_text(c, true);
     ewmh_set_frame_extents(c);
     client_set_status(c);
-
-    XMapWindow(display, dec);
 }
 
 /* Create new "dummy" windows to be used as decorations for the given client */
@@ -372,8 +352,6 @@ client_delete(struct client *c)
     if (ws == -1) {
         LOGN("Cannot delete client, not found");
         return;
-    } else {
-        LOGP("Deleting client on workspace %d", ws);
     }
 
     /* Delete in the stack */
@@ -512,6 +490,7 @@ static void
 handle_client_message(XEvent *e)
 {
     XClientMessageEvent *cme = &e->xclient;
+    LOGP("e: message %d", cme->window);
     long cmd, *data;
     //LOGP("client message is %lu", cme->message_type);
     //LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
@@ -742,7 +721,7 @@ handle_property_notify(XEvent *e)
     XPropertyEvent *ev = &e->xproperty;
     struct client *c;
 
-    // LOGN("Handling property notify event");
+    // LOGP("property: %s", XGetAtomName(display, ev->atom));
     c = get_client_from_window(ev->window);
 
     if (c == NULL)
@@ -752,7 +731,6 @@ handle_property_notify(XEvent *e)
         return;
 
     if (ev->atom == net_atom[NetWMName]) {
-        LOGN("Updating client title");
         client_set_title(c);
         draw_text(c, c == f_client);
     }
@@ -840,10 +818,26 @@ handle_map_request(XEvent *e)
 }
 
 static void
+handle_destroy_notify(XEvent *e)
+{
+    XDestroyWindowEvent *ev = &e->xdestroywindow;
+    struct client *c = get_client_from_window(ev->window);
+    LOGP("e: destroy %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
+}
+
+static void
+handle_reparent_notify(XEvent *e) {
+    XReparentEvent *ev = &e->xreparent;
+    struct client *c = get_client_from_window(ev->window);
+    LOGP("e: reparent %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
+}
+
+static void
 handle_unmap_notify(XEvent *e)
 {
     XUnmapEvent *ev = &e->xunmap;
     struct client *c = get_client_from_window(ev->window);
+    LOGP("e: unmap %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
 
     if (c == NULL) {
         /* Some applications *ahem* Spotify *ahem*, don't seem to place nicely with being deleted.
@@ -864,17 +858,16 @@ handle_unmap_notify(XEvent *e)
         return;
     }
 
-    LOGP("handling unmap for %lu", ev->window);
-
     if (c != NULL) {
         int border = conf.b_width + conf.i_width;
-        XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height);
+        XSelectInput(display, c->dec, NoEventMask); // stop any further event notifications
+        XSelectInput(display, c->window, NoEventMask);
+        XUnmapWindow(display, c->dec); // this is a bit too late and picom will fade out only the decorations
+        XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height); // why do we need to do this?
         XDestroyWindow(display, c->dec);
         client_delete(c);
         free(c);
         client_raise(f_client);
-    } else {
-
     }
 }
 
@@ -1396,8 +1389,10 @@ manage_new_window(Window w, XWindowAttributes *wa)
     // not sure we need this when parenting to decoration
     XMapWindow(display, c->window);
     XMapWindow(display, c->dec);
-
+    // XFlush(display); // show window with decorations immediately
     XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
+    XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1);
+    XSetWMProtocols(display, c->dec, &wm_atom[WMDeleteWindow], 1);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     client_manage_focus(c);
@@ -1755,20 +1750,6 @@ static void
 client_resize_relative(struct client *c, int w, int h)
 {
     client_resize_absolute(c, c->geom.width + w, c->geom.height + h);
-}
-
-static void
-run(void)
-{
-    XEvent e;
-    XSync(display, false);
-    while (running) {
-        XNextEvent(display, &e);
-        //LOGP("Receieved new %d event", e.type);
-        if (event_handler[e.type]) {
-            event_handler[e.type](&e);
-        }
-    }
 }
 
 static void
@@ -2446,8 +2427,42 @@ main(int argc, char *argv[])
         signal(SIGCHLD, SIG_IGN);
         load_config(conf_path);
     }
-    run();
-    close_wm();
+
+    XEvent e;
+    XSync(display, false);
+    while (running) {
+        XNextEvent(display, &e);
+        LOGP("event %d", e.type);
+        switch (e.type) {
+            case MapRequest: handle_map_request(&e); break;
+            case DestroyNotify: handle_destroy_notify(&e); break;
+            case UnmapNotify: handle_unmap_notify(&e); break;
+            case ConfigureNotify: handle_configure_notify(&e); break;
+            case ConfigureRequest: handle_configure_request(&e); break;
+            case ClientMessage: handle_client_message(&e); break;
+            case ButtonPress: handle_button_press(&e); break;
+            case PropertyNotify: handle_property_notify(&e); break;
+            case Expose: handle_expose(&e); break;
+            case FocusIn: handle_focus(&e); break;
+            case EnterNotify: handle_enter_notify(&e); break;
+            default: LOGP("e: other event %x", e.type);
+        }
+    }
+
+    LOGN("Shutting down window manager");
+    for (int i = 0; i < WORKSPACE_NUMBER; i++) {
+        while (c_list[i] != NULL) {
+            client_delete(c_list[i]);
+        }
+    }
+
+    XDeleteProperty(display, root, net_berry[BerryWindowStatus]);
+    XDeleteProperty(display, root, net_berry[BerryFontProperty]);
+    XDeleteProperty(display, root, net_atom[NetSupported]);
+
+    LOGN("Closing display...");
+    XCloseDisplay(display);
+
     free(font_name);
     free(conf_path);
 }
