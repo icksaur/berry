@@ -4,7 +4,12 @@
         "stdbool.h": "c",
         "xft.h": "c",
         "random": "c",
-        "utils.h": "c"
+        "utils.h": "c",
+        "cstdlib": "c",
+        "functional": "c",
+        "type_traits": "c",
+        "sstream": "c",
+        "utility": "c"
     },
     "editor.formatOnType": true,
     "[lisp]": {

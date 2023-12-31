@@ -142,6 +142,7 @@ static void load_color(XftColor *dest_color, unsigned long raw_color);
 static void load_config(char *conf_path);
 static void manage_new_window(Window w, XWindowAttributes *wa);
 static int manage_xsend_icccm(struct client *c, Atom atom);
+static void spawn(const char *file, const char * argv[]);
 static void grab_buttons(void);
 static void ungrab_buttons(void);
 static void refresh_config(void);
@@ -201,6 +202,24 @@ static const ipc_event_handler_t ipc_handler [IPCLast] = {
     [IPCEdgeGap]                  = ipc_edge_gap,
     [IPCConfig]                   = ipc_config,
     [IPCWindowHide]               = ipc_window_hide,
+};
+
+typedef struct {
+    unsigned int keysym;
+    const char *file;
+    char *const *argv;
+} launcher;
+
+#define NOARGS (char* const*)NULL
+
+static const char *rofiargs[] = { "-show", "drun", NULL };
+
+static const launcher launchers[] = {
+    { XK_Return, "kitty", NOARGS },
+    { XK_e, "thunar", NOARGS },
+    { XK_Escape, "xfce4-taskmanager", NOARGS },
+    { XK_l, "slock", NOARGS },
+    { XK_space, "rofi", rofiargs },
 };
 
 /* Move a client to the center of the screen, centered vertically and horizontally
@@ -585,7 +604,17 @@ handle_client_message(XEvent *e)
 static void
 handle_key_press(XEvent *e) {
     XKeyPressedEvent *ev = &e->xkey;
-    if (ev->keycode == tab_keycode) {
+    if (ev->state & Mod4Mask) {
+        KeySym keysym = XKeycodeToKeysym(display, ev->keycode, 0);
+        for (long unsigned int i = 0; i < sizeof(launchers); i++) {
+            if (launchers[i].keysym == keysym) {
+                spawn(launchers[i].file, launchers[i].argv);
+                break;
+            }
+        }
+    }
+    else if (ev->keycode == tab_keycode)
+    {
         if (!alt_tabbing) {
             alt_tabbing = true;
             if (f_client) {
@@ -593,7 +622,9 @@ handle_key_press(XEvent *e) {
             }
         }
         focus_next(f_client);
-    } else if (f_client) {
+    }
+    else if (f_client)
+    {
         XKeyEvent new_event = (*ev);
         new_event.window = f_client->window;
         XSendEvent(display, f_client->window, False, KeyPressMask, (XEvent *)&new_event);
@@ -625,8 +656,25 @@ handle_key_release(XEvent *e) {
     }
 }
 
-static void
-handle_button_press(XEvent *e) {
+static void spawn(const char* file, const char * argv[]) {
+    struct sigaction sa;
+    if (fork() == 0) {
+        if (display)
+			close(ConnectionNumber(display));
+		setsid();
+
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		sa.sa_handler = SIG_DFL;
+		sigaction(SIGCHLD, &sa, NULL);
+
+		execvp(file, argv);
+        LOGP("failed to run %s", file);
+        exit(1);
+    }
+}
+
+static void handle_button_press(XEvent *e) {
     /* Much credit to the authors of dwm for
      * this function.
      */
@@ -1961,7 +2009,11 @@ setup(void)
                  StructureNotifyMask | SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask | Button1Mask);
     XGrabKey(display, alt_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
 
-    LOGN("selected root input");
+    for (long unsigned int i = 0; i < sizeof(launchers); i++) {
+        XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
+    }
+
+        LOGN("selected root input");
     xerrorxlib = XSetErrorHandler(xerror);
 
     check = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
