@@ -1751,13 +1751,8 @@ client_place(struct client *c)
 static void
 client_raise(struct client *c)
 {
-    if (c != NULL) {
-        if (!c->decorated) {
-            XRaiseWindow(display, c->window);
-        } else {
-            XRaiseWindow(display, c->dec);
-        }
-    }
+    if (c != NULL) 
+        XRaiseWindow(display, c->dec);
 }
 
 static void monitors_setup(void)
