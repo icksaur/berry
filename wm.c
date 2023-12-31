@@ -27,6 +27,7 @@
 #include "utils.h"
 
 static struct client *f_client = NULL; /* focused client */
+static struct client *f_last_client = NULL; /* previously focused client */
 static struct client *c_list[WORKSPACE_NUMBER]; /* 'stack' of managed clients in drawing order */
 static struct client *f_list[WORKSPACE_NUMBER]; /* ordered lists for clients to be focused */
 static struct monitor *m_list = NULL; /* All saved monitors */
@@ -49,7 +50,7 @@ static XRenderColor r_color;
 static GC gc;
 static Atom utf8string;
 static Time last_release = 0; /* double-click detection */
-static int alt_pressed = 0; // alt-tab
+static int alt_tabbing = 0;
 static unsigned int alt_keycode;
 static unsigned int tab_keycode;
 
@@ -584,11 +585,13 @@ handle_client_message(XEvent *e)
 static void
 handle_key_press(XEvent *e) {
     XKeyPressedEvent *ev = &e->xkey;
-    if (ev->keycode == alt_keycode) {
-        if (!alt_pressed) {
-            alt_pressed = true;
+    if (ev->keycode == tab_keycode) {
+        if (!alt_tabbing) {
+            alt_tabbing = true;
+            if (f_client) {
+                f_last_client = f_client;
+            }
         }
-    } else if (ev->keycode == tab_keycode) {
         focus_next(f_client);
     } else if (f_client) {
         XKeyEvent new_event = (*ev);
@@ -598,13 +601,26 @@ handle_key_press(XEvent *e) {
 }
 
 static void
-handle_key_release(XEvent *e)
-{
+handle_key_release(XEvent *e) {
     XKeyReleasedEvent *ev = &e->xkey;
     if (ev->keycode == alt_keycode) {
-        if (alt_pressed) {
-            LOGN("alt release");
-            alt_pressed = false;
+        if (alt_tabbing) {
+            alt_tabbing = false;
+            LOGN("alt release, rewrite focus order");
+            if (f_client) {
+                struct client *rewrite_next = NULL;
+                for (struct client *cur = f_list[curr_ws]; cur != NULL; cur = cur->f_next) {
+                    if (cur->f_next == f_client) {
+                        rewrite_next = cur;
+                        break;
+                    }
+                }
+                if (rewrite_next) {
+                    rewrite_next->f_next = f_client->f_next;
+                    f_client->f_next = f_last_client;
+                    f_list[curr_ws] = f_client;
+                }
+            }
         }
     }
 }
