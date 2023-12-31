@@ -210,16 +210,17 @@ typedef struct {
     char *const *argv;
 } launcher;
 
-#define NOARGS (char* const*)NULL
-
-static const char *rofiargs[] = { "-show", "drun", NULL };
-
 static const launcher launchers[] = {
-    { XK_Return, "kitty", NOARGS },
-    { XK_e, "thunar", NOARGS },
-    { XK_Escape, "xfce4-taskmanager", NOARGS },
-    { XK_l, "slock", NOARGS },
-    { XK_space, "rofi", rofiargs },
+    { XK_Return, "kitty", NULL },
+    { XK_e, "thunar", NULL },
+    { XK_Escape, "xfce4-taskmanager", NULL },
+    { XK_l, "slock", NULL },
+    { XK_space, "rofi", (const char *[]){"-show", "drun", NULL} },
+    { XK_m, NULL, NULL },
+    { XK_c, NULL, NULL },
+    { XK_f, NULL, NULL },
+    { XK_q, NULL, NULL },
+    { XK_i, NULL, NULL },
 };
 
 /* Move a client to the center of the screen, centered vertically and horizontally
@@ -607,10 +608,17 @@ handle_key_press(XEvent *e) {
     if (ev->state & Mod4Mask) {
         KeySym keysym = XKeycodeToKeysym(display, ev->keycode, 0);
         for (long unsigned int i = 0; i < sizeof(launchers); i++) {
-            if (launchers[i].keysym == keysym) {
+            if (launchers[i].keysym == keysym && launchers[i].file) {
                 spawn(launchers[i].file, launchers[i].argv);
-                break;
+                return;
             }
+        }
+        switch (keysym) {
+            case XK_f: client_fullscreen(f_client, true, true, true); break;
+            case XK_m: client_monocle(f_client); break;
+            case XK_c: client_center(f_client); break;
+            case XK_q: client_close(f_client); break;
+            case XK_i: client_toggle_decorations(f_client); break;
         }
     }
     else if (ev->keycode == tab_keycode)
