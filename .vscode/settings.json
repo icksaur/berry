@@ -9,7 +9,10 @@
         "functional": "c",
         "type_traits": "c",
         "sstream": "c",
-        "utility": "c"
+        "utility": "c",
+        "bitset": "c",
+        "set": "c",
+        "format": "c"
     },
     "editor.formatOnType": true,
     "[lisp]": {

@@ -20,6 +20,7 @@
 #include <X11/extensions/shape.h>
 #include <X11/cursorfont.h>
 #include <X11/Xft/Xft.h>
+#include <X11/XF86keysym.h>
 
 #include "globals.h"
 #include "ipc.h"
@@ -212,7 +213,7 @@ typedef struct {
 
 static const launcher launchers[] = {
     { XK_Return, "kitty", NULL },
-    { XK_e, "thunar", NULL },
+    { XK_e, "echo ", (const char *[]){"hello", "there", NULL} },
     { XK_Escape, "xfce4-taskmanager", NULL },
     { XK_l, "slock", NULL },
     { XK_space, "rofi", (const char *[]){"-show", "drun", NULL} },
@@ -222,6 +223,15 @@ static const launcher launchers[] = {
     { XK_q, NULL, NULL },
     { XK_i, NULL, NULL },
 };
+
+static const launcher nomod_launchers[] = {
+    { XF86XK_AudioLowerVolume, "/home/carl/.config/berry/volumedown.sh", NULL },
+    { XF86XK_AudioRaiseVolume, "/home/carl/.config/berry/volumeup.sh", NULL },
+    { XF86XK_AudioMute, "/home/carl/.config/berry/volumemute.sh", NULL },
+};
+
+static const int num_launchers = sizeof(launchers) / sizeof(launcher);
+static const int num_nomod_launchers = sizeof(nomod_launchers) / sizeof(launcher);
 
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
@@ -605,9 +615,9 @@ handle_client_message(XEvent *e)
 static void
 handle_key_press(XEvent *e) {
     XKeyPressedEvent *ev = &e->xkey;
+    KeySym keysym = XKeycodeToKeysym(display, ev->keycode, 0);
     if (ev->state & Mod4Mask) {
-        KeySym keysym = XKeycodeToKeysym(display, ev->keycode, 0);
-        for (long unsigned int i = 0; i < sizeof(launchers); i++) {
+        for (long unsigned int i = 0; i < num_launchers; i++) {
             if (launchers[i].keysym == keysym && launchers[i].file) {
                 spawn(launchers[i].file, launchers[i].argv);
                 return;
@@ -620,9 +630,14 @@ handle_key_press(XEvent *e) {
             case XK_q: client_close(f_client); break;
             case XK_i: client_toggle_decorations(f_client); break;
         }
-    }
-    else if (ev->keycode == tab_keycode)
-    {
+    } else if (ev->state == 0) {
+        for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
+            if (nomod_launchers[i].keysym == keysym && nomod_launchers[i].file) {
+                spawn(nomod_launchers[i].file, nomod_launchers[i].argv);
+                return;
+            }
+        }
+    } else if (ev->keycode == tab_keycode) {
         if (!alt_tabbing) {
             alt_tabbing = true;
             if (f_client) {
@@ -630,8 +645,10 @@ handle_key_press(XEvent *e) {
             }
         }
         focus_next(f_client);
+        return;
     }
-    else if (f_client)
+    
+    if (f_client)
     {
         XKeyEvent new_event = (*ev);
         new_event.window = f_client->window;
@@ -667,8 +684,9 @@ handle_key_release(XEvent *e) {
 static void spawn(const char* file, const char * argv[]) {
     struct sigaction sa;
     if (fork() == 0) {
-        if (display)
+        if (display) {
 			close(ConnectionNumber(display));
+        }
 		setsid();
 
 		sigemptyset(&sa.sa_mask);
@@ -2017,11 +2035,15 @@ setup(void)
                  StructureNotifyMask | SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask | Button1Mask);
     XGrabKey(display, alt_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
 
-    for (long unsigned int i = 0; i < sizeof(launchers); i++) {
+    for (long unsigned int i = 0; i < num_launchers; i++) {
         XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
     }
 
-        LOGN("selected root input");
+    for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
+        XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+    }
+
+    LOGN("selected root input");
     xerrorxlib = XSetErrorHandler(xerror);
 
     check = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
