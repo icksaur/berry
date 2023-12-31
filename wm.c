@@ -137,6 +137,7 @@ static void ipc_edge_gap(long *d);
 static void monitors_free(void);
 static void monitors_setup(void);
 
+static void reorder_focus(void);
 static void draw_text(struct client *c, bool focused);
 static struct client* get_client_from_window(Window w);
 static void load_color(XftColor *dest_color, unsigned long raw_color);
@@ -296,11 +297,15 @@ draw_text(struct client *c, bool focused)
         return;
     }
 
-    //LOGP("Drawing the following text with height %u:", extents.height);
-    //LOGP("   %s", c->title);
+
     XClearWindow(display, c->dec);
     draw = XftDrawCreate(display, c->dec, DefaultVisual(display, screen), DefaultColormap(display, screen));
     xft_render_color = focused ? &xft_focus_color : &xft_unfocus_color;
+    /*LOGP("Drawing the following text with height %u color #%02x%02x%02x x %d y %d",
+    extents.height,
+    (unsigned int)xft_render_color->color.red, (unsigned int)xft_render_color->color.green, (unsigned int)xft_render_color->color.blue,
+    x, y);
+    LOGP("   %s", c->title);*/
     XftDrawStringUtf8(draw, xft_render_color, font, x, y, (XftChar8 *) c->title, strlen(c->title));
     XftDrawDestroy(draw);
 }
@@ -624,11 +629,11 @@ handle_key_press(XEvent *e) {
             }
         }
         switch (keysym) {
-            case XK_f: client_fullscreen(f_client, true, true, true); break;
-            case XK_m: client_monocle(f_client); break;
-            case XK_c: client_center(f_client); break;
-            case XK_q: client_close(f_client); break;
-            case XK_i: client_toggle_decorations(f_client); break;
+            case XK_f: client_fullscreen(f_client, true, true, true); return;
+            case XK_m: client_monocle(f_client); return;
+            case XK_c: client_center(f_client); return;
+            case XK_q: client_close(f_client); return;
+            case XK_i: client_toggle_decorations(f_client); return;
         }
     } else if (ev->state == 0) {
         for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
@@ -656,29 +661,30 @@ handle_key_press(XEvent *e) {
     }
 }
 
-static void
-handle_key_release(XEvent *e) {
+static void handle_key_release(XEvent *e) {
     XKeyReleasedEvent *ev = &e->xkey;
     if (ev->keycode == alt_keycode) {
         if (alt_tabbing) {
             alt_tabbing = false;
-            LOGN("alt release, rewrite focus order");
-            if (f_client) {
-                struct client *rewrite_next = NULL;
-                for (struct client *cur = f_list[curr_ws]; cur != NULL; cur = cur->f_next) {
-                    if (cur->f_next == f_client) {
-                        rewrite_next = cur;
-                        break;
-                    }
-                }
-                if (rewrite_next) {
-                    rewrite_next->f_next = f_client->f_next;
-                    f_client->f_next = f_last_client;
-                    f_list[curr_ws] = f_client;
-                }
+            reorder_focus();
+        }
+    }
+}
+
+// move the next focus window to the last one so we can cycle focus between recent windows
+static void reorder_focus(void) {
+    if (f_client && f_last_client && (f_client != f_last_client)) {
+        for (struct client **cur = &f_list[curr_ws]; *cur != NULL; cur = &((*cur)->f_next)) {
+            if (*cur == f_last_client) {
+                *cur = f_last_client->f_next;
+                f_last_client->f_next = f_client->f_next;
+                f_client->f_next = f_last_client;
+                break;
             }
         }
     }
+
+    f_last_client = NULL;
 }
 
 static void spawn(const char* file, const char * argv[]) {
