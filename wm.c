@@ -21,6 +21,7 @@
 #include <X11/cursorfont.h>
 #include <X11/Xft/Xft.h>
 #include <X11/XF86keysym.h>
+#include <xcb/xcb_ewmh.h>
 
 #include "globals.h"
 #include "ipc.h"
@@ -61,7 +62,7 @@ static unsigned int tab_keycode;
 static void client_center(struct client *c);
 static void client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h);
 static void client_close(struct client *c);
-static void client_decorations_create(struct client *c);
+static void client_decorations_create(struct client *cm);
 static void client_decorations_show(struct client *c);
 static void client_decorations_destroy(struct client *c);
 static void client_delete(struct client *c);
@@ -87,6 +88,7 @@ static void client_snap_left(struct client *c);
 static void client_snap_right(struct client *c);
 static void client_toggle_decorations(struct client *c);
 static void client_set_status(struct client *c);
+static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y);
 
 /* EWMH functions */
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen);
@@ -164,6 +166,8 @@ static int get_dec_height(struct client *c);
 static int left_width(struct client *c);
 static int top_height(struct client *c);
 
+static Bool window_is_undecorated(Window window);
+
 typedef void (*x11_event_handler_t)(XEvent *e);
 typedef void (*ipc_event_handler_t)(long *e);
 
@@ -233,6 +237,16 @@ static const launcher nomod_launchers[] = {
 
 static const int num_launchers = sizeof(launchers) / sizeof(launcher);
 static const int num_nomod_launchers = sizeof(nomod_launchers) / sizeof(launcher);
+
+#define MWM_HINTS_DECORATIONS (1L << 1)
+
+typedef struct {
+    unsigned long flags;
+    unsigned long functions;
+    unsigned long decorations;
+    long input_mode;
+    unsigned long status;
+} MotifWmHints;
 
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
@@ -539,8 +553,8 @@ handle_client_message(XEvent *e)
     XClientMessageEvent *cme = &e->xclient;
     LOGP("e: message %d", cme->window);
     long cmd, *data;
-    //LOGP("client message is %lu", cme->message_type);
-    //LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
+    LOGP("client message is %lu", cme->message_type);
+    LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
     if (cme->message_type == net_berry[BerryClientEvent])
     {
         //LOGN("Recieved event from berryc");
@@ -595,9 +609,16 @@ handle_client_message(XEvent *e)
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
+
         data = cme->data.l;
-        client_move_absolute(c, data[1], data[2]);
-        client_resize_absolute(c, data[3], data[4]);
+        long direction = cme->data.l[2];
+        switch (direction) {
+            case XCB_EWMH_WM_MOVERESIZE_MOVE:
+                client_try_drag(c, True, True, cme->data.l[0], cme->data.l[1]);
+                break;
+            case XCB_EWMH_WM_MOVERESIZE_SIZE_TOPLEFT ... XCB_EWMH_WM_MOVERESIZE_SIZE_LEFT:
+                break;
+        }
     }
     else if (cme->message_type == wm_atom[WMChangeState])
     {
@@ -778,7 +799,7 @@ static void handle_button_press(XEvent *e) {
                         if (ev.xbutton.subwindow == c->dec)
                             client_close(c);
                         break;
-                    case 3: // right-click move to next workspace
+                    case 3: // right-click hide
                         if (ev.xbutton.subwindow == c->dec) {
                             client_hide(c);
                             client_manage_focus(NULL);
@@ -814,6 +835,49 @@ static void handle_button_press(XEvent *e) {
                     }
                     client_move_absolute(c, nx, ny);
                     dragged = true;
+                }
+                // XFlush(display); // not needed?
+                break;
+        }
+    } while (ev.type != ButtonRelease);
+    XUngrabPointer(display, CurrentTime);
+}
+
+static void client_try_drag(struct client * c, int dragged, int is_move, int x, int y) {
+    XEvent ev;
+    int nx, ny, ocx, ocy, nw, nh, ocw, och, rx, ry;
+    unsigned int mask;
+    ocx = c->geom.x;
+    ocy = c->geom.y;
+    Window root_return, client_return;
+
+    LOGP("ocx: %d, ocy: %d, x: %d, y: %d\n", ocx, ocy, x, y);
+    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
+    {
+        return;
+    }
+    XQueryPointer(display, c->window, &root_return, &client_return, &rx, &ry, &x, &y, &mask);
+    do {
+        XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask|FocusChangeMask, &ev);
+        switch (ev.type) {
+            case ButtonRelease:
+                break;
+            case FocusIn:
+            case ConfigureRequest:
+            case Expose:
+            case MapRequest:
+                event_handler[ev.type](&ev);
+                break;
+            case MotionNotify:
+                if (!is_move) {
+                    nw = ev.xmotion.x - x;
+                    nh = ev.xmotion.y - y;
+                    client_resize_absolute(c, ocw + nw, och + nh);
+                } else {
+                    nx = ocx + (ev.xmotion.x - rx);
+                    ny = ocy + (ev.xmotion.y - ry);
+                    LOGP("nx: %d, ny: %d, ev.x: %d, ev.y: %d", nx, ny, ev.xmotion.x, ev.xmotion.y);
+                    client_move_absolute(c, nx, ny);
                 }
                 // XFlush(display); // not needed?
                 break;
@@ -902,7 +966,7 @@ handle_configure_request(XEvent *e)
     if (ev->value_mask & CWBorderWidth) wc.border_width = ev->border_width;
     if (ev->value_mask & CWSibling) wc.sibling = ev->above;
     if (ev->value_mask & CWStackMode) wc.stack_mode = ev->detail;
-    XConfigureWindow(display, ev->window, ev->value_mask, &wc); // Seems noisy because it makes a new configure.  This causes the window to be reconfigured to the last size when it was closed. Not sure how that works.
+    XConfigureWindow(display, ev->window, ev->value_mask, &wc); // Seems noisy because it makes a new configure.  This causes the window to be reconfigured to the last size when it was closed. Not sure how that works.
     c = get_client_from_window(ev->window);
 
     if (c != NULL) {
@@ -1482,6 +1546,8 @@ manage_new_window(Window w, XWindowAttributes *wa)
         return;
     }
 
+    Bool is_decorated = !window_is_undecorated(w);
+
     struct client *c;
     c = malloc(sizeof(struct client));
     if (c == NULL) {
@@ -1507,6 +1573,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
 
     if (conf.decorate) {
         if (hasClassHint) {
+            LOGN("Decorating window");
             client_decorations_create(c);
         } else {
             LOGN("Not decorating window with no class hint");
@@ -1520,11 +1587,17 @@ manage_new_window(Window w, XWindowAttributes *wa)
     ewmh_set_desktop(c, c->ws);
     ewmh_set_client_list();
 
+    if (!is_decorated && c->dec) {
+        LOGN("Hiding decorations for window that doesn't want them");
+        client_toggle_decorations(c);
+    }
+
     // not sure we need this when parenting to decoration
     XMapWindow(display, c->window);
     XMapWindow(display, c->dec);
     // XFlush(display); // show window with decorations immediately
     XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
+    XSelectInput(display, c->dec, SubstructureRedirectMask);
     XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1);
     XSetWMProtocols(display, c->dec, &wm_atom[WMDeleteWindow], 1);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
@@ -1749,14 +1822,13 @@ client_place(struct client *c)
 }
 
 static void
-client_raise(struct client *c)
-{
-    if (c != NULL) 
-        XRaiseWindow(display, c->dec);
+client_raise(struct client *c) {
+    if (c != NULL) {
+        if (c->dec) XRaiseWindow(display, c->dec ? c->dec : c->window);
+    }
 }
 
-static void monitors_setup(void)
-{
+static void monitors_setup(void) {
     XineramaScreenInfo *m_info;
     int n;
 
@@ -2059,7 +2131,7 @@ setup(void)
     net_atom[NetNumberOfDesktops]           = XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS", False);
     net_atom[NetActiveWindow]               = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
     net_atom[NetWMStateFullscreen]          = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
-    net_atom[NetWMMoveResize]               = XInternAtom(display, "_NET_MOVERESIZE_WINDOW", False);
+    net_atom[NetWMMoveResize]               = XInternAtom(display, "_NET_WM_MOVERESIZE", False);
     net_atom[NetWMCheck]                    = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
     net_atom[NetCurrentDesktop]             = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
     net_atom[NetWMState]                    = XInternAtom(display, "_NET_WM_STATE", False);
@@ -2088,6 +2160,7 @@ setup(void)
     wm_atom[WMTakeFocus]             = XInternAtom(display, "WM_TAKE_FOCUS", False);
     wm_atom[WMProtocols]             = XInternAtom(display, "WM_PROTOCOLS", False);
     wm_atom[WMChangeState]           = XInternAtom(display, "WM_CHANGE_STATE", False);
+    wm_atom[WMMotifHints]           = XInternAtom(display, "_MOTIF_WM_HINTS", False);
 
     /* Internal berry atoms */
     net_berry[BerryWindowStatus]     = XInternAtom(display, "BERRY_WINDOW_STATUS", False);
@@ -2336,14 +2409,35 @@ static void ewmh_set_frame_extents(struct client *c)
             XA_CARDINAL, 32, PropModeReplace, (unsigned char *) data, 4);
 }
 
-static void ewmh_set_client_list(void)
-{
+static void ewmh_set_client_list(void) {
     /* Remove all current clients */
     XDeleteProperty(display, root, net_atom[NetClientList]);
     for (int i = 0; i < WORKSPACE_NUMBER; i++)
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next)
             XChangeProperty(display, root, net_atom[NetClientList], XA_WINDOW, 32, PropModeAppend,
                     (unsigned char *) &(tmp->window), 1);
+}
+
+static Bool window_is_undecorated(Window window) {
+    Atom actual_type;
+    int actual_format;
+    unsigned long nitems;
+    unsigned long bytes_after;
+    unsigned char *prop = NULL;
+    if (XGetWindowProperty(display, window, wm_atom[WMMotifHints], 0, sizeof(MotifWmHints)/sizeof(long),
+                           False, AnyPropertyType, &actual_type, &actual_format,
+                           &nitems, &bytes_after, &prop) == Success) {
+        if (prop) {
+            MotifWmHints *hints = (MotifWmHints *)prop;
+            if (hints->flags & MWM_HINTS_DECORATIONS && hints->decorations == 0) {
+                XFree(prop);
+                return True; // Window requested to be undecorated
+            }
+            XFree(prop);
+        }
+    }
+
+    return False;
 }
 
 /*
@@ -2576,21 +2670,8 @@ main(int argc, char *argv[])
     XSync(display, false);
     while (running) {
         XNextEvent(display, &e);
-        switch (e.type) {
-            case MapRequest: handle_map_request(&e); break;
-            case DestroyNotify: handle_destroy_notify(&e); break;
-            case UnmapNotify: handle_unmap_notify(&e); break;
-            case ConfigureNotify: handle_configure_notify(&e); break;
-            case ConfigureRequest: handle_configure_request(&e); break;
-            case ClientMessage: handle_client_message(&e); break;
-            case ButtonPress: handle_button_press(&e); break;
-            case KeyPress: handle_key_press(&e); break;
-            case KeyRelease: handle_key_release(&e); break;
-            case PropertyNotify: handle_property_notify(&e); break;
-            case Expose: handle_expose(&e); break;
-            case FocusIn: handle_focus(&e); break;
-            case EnterNotify: handle_enter_notify(&e); break;
-        }
+        if (event_handler[e.type])
+            event_handler[e.type](&e);
     }
 
     LOGN("Shutting down window manager");

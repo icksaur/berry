@@ -63,6 +63,7 @@ enum atoms_net {
     NetWMMoveResize,
     NetDesktopNames,
     NetDesktopViewport,
+
     NetLast
 };
 
@@ -71,6 +72,7 @@ enum atoms_wm {
     WMProtocols,
     WMTakeFocus,
     WMChangeState,
+    WMMotifHints,
     WMLast,
 };
 
