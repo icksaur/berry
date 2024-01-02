@@ -2,19 +2,32 @@
     <h1>berry</h1><br>
 </div>
 
-A healthy, bite-sized window manager written in C over the XLib library.  Originally from [berry](https://github.com/JLErvin/berry).
+A small window manager written using XLib library.  Not recommended for general-purpose use, but here to share.  Originally from [berry](https://github.com/JLErvin/berry).
 
-This version has a few changes which remove certain features and adds mouse-focused management features:
-
-* double-click maximize
-* right-click minimize
-* middle-click close
-* drag from max to restore previous size
-* drag below client area to resize
-* bottom-height property to extend a handle at bottom of windows for resizing
-* minimize and restore via clicking task in task managers like tint2
-* minimize berryc command
+This version has a few changes which remove certain features and adds mouse-focused management features.
 
 # Usage
 
 For mostly relevant usage and documentation, please visit the project website [berrywm.org](https://berrywm.org)
+
+# Window Managment
+
+* doubleclick title: window maximize
+* rightclick title: window minimize
+* middleclick title: window close
+* drag lower bar: resize window
+* Super+drag anywhere in window: move window
+* Super+right-drag anywhere in window: resize window
+* alt+tab: window cycle focus
+* super+Q: window close
+* super+M: window maximize
+* super+I: window decoration toggle
+* super+F: window fullscreen
+* super+C: window center
+
+# Hardcoded Program Shortcuts
+
+* super+return: kitty
+* super+space: rofi -show drun
+* super+Escape: xfce-taskmanager
+* super+L: slock
