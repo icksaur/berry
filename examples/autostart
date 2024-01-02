@@ -1,33 +1,6 @@
 #!/bin/bash
 
-export TERMINAL="kitty"
-
 feh --bg-fill ~/Sync/custom/moss.jpeg
-
-berryc decorate_new true
-
-# Set decoration geometry
-berryc border_width        0
-berryc inner_border_width  0
-berryc title_height        28
-berryc draw_text           true
-berryc top_gap             36
-
-# Set decoration colors
-berryc focus_color         b3be5a
-berryc unfocus_color       604040
-berryc inner_focus_color   b3be5a
-berryc inner_unfocus_color 604040
-berryc text_focus_color    000000
-berryc text_unfocus_color  dddddd
-
-# Other options
-berryc smart_place "true"
-berryc draw_text   "true"
-berryc edge_lock   "false"
-berryc set_font    "System-12"
-
-#sxhkd -c ~/.config/berry/sxhkdrc &
 #picom -b -c --backend glx --no-vsync --config ~/.config/picom.conf
 tint2 &
 fcitx5 -d
