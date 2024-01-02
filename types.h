@@ -44,6 +44,8 @@ enum atoms_net {
     NetWMStateFullscreen,
     NetWMCheck,
     NetWMState,
+    NetWMStateMaximizedVert,
+    NetWMStateMaximizedHorz,
     NetWMName,
     NetWMWindowType,
     NetWMWindowTypeMenu,

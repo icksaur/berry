@@ -239,6 +239,9 @@ static const int num_launchers = sizeof(launchers) / sizeof(launcher);
 static const int num_nomod_launchers = sizeof(nomod_launchers) / sizeof(launcher);
 
 #define MWM_HINTS_DECORATIONS (1L << 1)
+#define _NET_WM_STATE_REMOVE 0
+#define _NET_WM_STATE_ADD 1
+#define _NET_WM_STATE_TOGGLE 2
 
 typedef struct {
     unsigned long flags;
@@ -379,9 +382,9 @@ client_decorations_show(struct client *c)
     XMoveResizeWindow(display, c->window, x, y, w, h);
     c->decorated = true;
 
-    //draw_text(c, true);
+    draw_text(c, true);
     ewmh_set_frame_extents(c);
-    //client_refresh(c); // reposition client within decoration
+    client_refresh(c); // reposition client within decoration
     client_set_status(c);
 }
 
@@ -492,15 +495,15 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
             client_decorations_show(c);
             client_raise(c);
             client_manage_focus(c);
-            //ewmh_set_frame_extents(c);
+            ewmh_set_frame_extents(c);
         }
 
         c->fullscreen = false;
         c->was_fs = false;
-        //client_refresh(c);
+        client_refresh(c);
     }
 
-    //client_set_status(c);
+    client_set_status(c);
 }
 
 /* Focus the next window in the list. Windows are sorted by the order in which they are
@@ -557,7 +560,7 @@ handle_client_message(XEvent *e)
     LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
     if (cme->message_type == net_berry[BerryClientEvent])
     {
-        //LOGN("Recieved event from berryc");
+        LOGN("Recieved event from berryc");
         if (cme->format != 32) {
 			LOGN("Wrong format, ignoring event");
 			return;
@@ -566,45 +569,47 @@ handle_client_message(XEvent *e)
         data = cme->data.l;
         ipc_handler[cmd](data);
     }
-    else if (cme->message_type == net_atom[NetWMState])
-    {
-        struct client* c = get_client_from_window(cme->window);
+    else if (cme->message_type == net_atom[NetWMState]) {
+        struct client *c = get_client_from_window(cme->window);
         if (c == NULL) {
             LOGN("client not found...");
             return;
+        }
+
+        Atom action = (Atom)cme->data.l[1];
+
+        if (action == net_atom[NetWMStateMaximizedHorz] || action == net_atom[NetWMStateMaximizedVert]) {
+            switch (cme->data.l[0]) {
+                case _NET_WM_STATE_ADD:
+                case _NET_WM_STATE_REMOVE:
+                case _NET_WM_STATE_TOGGLE:
+                    client_monocle(c); // toggle maximize
+                    break;
+            }
         }
 
         if ((Atom)cme->data.l[1] == net_atom[NetWMStateFullscreen] ||
             (Atom)cme->data.l[2] == net_atom[NetWMStateFullscreen]) {
             LOGN("Recieved fullscreen request");
             if (cme->data.l[0] == 0) { // remove fullscreen
-                /*ewmh_set_fullscreen(c, false);*/
                 client_fullscreen(c, false, false, true);
                 LOGN("type 0");
             } else if (cme->data.l[0] == 1) { // set fullscreen
-                /*ewmh_set_fullscreen(c, true);*/
                 client_fullscreen(c, false, true, true);
                 LOGN("type 1");
             } else if (cme->data.l[0] == 2) { // toggle fullscreen
-                /*ewmh_set_fullscreen(c, !c->fullscreen);*/
                 client_fullscreen(c, true, true, true);
                 LOGN("type 2");
             }
         }
-    }
-    else if (cme->message_type == net_atom[NetActiveWindow])
-    {
+    } else if (cme->message_type == net_atom[NetActiveWindow]) {
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
         client_manage_focus(c);
-    }
-    else if (cme->message_type == net_atom[NetCurrentDesktop])
-    {
+    } else if (cme->message_type == net_atom[NetCurrentDesktop]) {
         switch_ws(cme->data.l[0]);
-    }
-    else if (cme->message_type == net_atom[NetWMMoveResize])
-    {
+    } else if (cme->message_type == net_atom[NetWMMoveResize]) {
         LOGN("Handling MOVERESIZE");
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL)
@@ -616,23 +621,21 @@ handle_client_message(XEvent *e)
             case XCB_EWMH_WM_MOVERESIZE_MOVE:
                 client_try_drag(c, True, True, cme->data.l[0], cme->data.l[1]);
                 break;
-            case XCB_EWMH_WM_MOVERESIZE_SIZE_TOPLEFT ... XCB_EWMH_WM_MOVERESIZE_SIZE_LEFT:
+            case XCB_EWMH_WM_MOVERESIZE_SIZE_RIGHT:
+            case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOM:
+            case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOMRIGHT:
+                client_try_drag(c, True, False, cme->data.l[0], cme->data.l[1]);
                 break;
         }
-    }
-    else if (cme->message_type == wm_atom[WMChangeState])
-    {
+    } else if (cme->message_type == wm_atom[WMChangeState]) {
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
-        if (c->hidden)
-        {
+        if (c->hidden) {
             // restore iconified client
             client_show(c);
             client_manage_focus(c);
-        }
-        else
-        {
+        } else {
             client_hide(c);
         }
     }
@@ -751,9 +754,14 @@ static void handle_button_press(XEvent *e) {
  
     if (!bev->state) {
         int wx, wy;
+        int extra_width = 0;
+        int extra_height = 0;
         XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
-        int extra_width = conf.b_width + conf.i_width;
-        int extra_height = extra_width + conf.t_height + conf.bottom_height;
+
+        if (c->decorated) {
+            extra_width + conf.t_height + conf.bottom_height;
+            conf.b_width + conf.i_width;
+        }
 
         if (wx > 0 && wy > 0 && wx < c->geom.width - extra_width && wy < c->geom.height - extra_height) {
             LOGN("click with no modifiers seems to be in client area");
@@ -849,8 +857,11 @@ static void client_try_drag(struct client * c, int dragged, int is_move, int x, 
     unsigned int mask;
     ocx = c->geom.x;
     ocy = c->geom.y;
+    ocw = c->geom.width;
+    och = c->geom.height;
     Window root_return, client_return;
 
+    LOGP("client decorations %s", is_move ? "move" : "resize");
     LOGP("ocx: %d, ocy: %d, x: %d, y: %d\n", ocx, ocy, x, y);
     if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
     {
@@ -870,13 +881,16 @@ static void client_try_drag(struct client * c, int dragged, int is_move, int x, 
                 break;
             case MotionNotify:
                 if (!is_move) {
-                    nw = ev.xmotion.x - x;
-                    nh = ev.xmotion.y - y;
-                    client_resize_absolute(c, ocw + nw, och + nh);
-                } else {
+                    nw = ocw + (ev.xmotion.x - rx);
+                    nh = och + (ev.xmotion.y - ry);
+                    LOGP("resize nw: %d, nh: %d, ev.x: %d, ev.y: %d", nw, nh, ev.xmotion.x, ev.xmotion.y);
+                    client_resize_absolute(c, nw, nh);
+                }
+                else
+                {
                     nx = ocx + (ev.xmotion.x - rx);
                     ny = ocy + (ev.xmotion.y - ry);
-                    LOGP("nx: %d, ny: %d, ev.x: %d, ev.y: %d", nx, ny, ev.xmotion.x, ev.xmotion.y);
+                    LOGP("move nx: %d, ny: %d, ev.x: %d, ev.y: %d", nx, ny, ev.xmotion.x, ev.xmotion.y);
                     client_move_absolute(c, nx, ny);
                 }
                 // XFlush(display); // not needed?
@@ -932,7 +946,7 @@ handle_property_notify(XEvent *e)
         client_set_title(c);
         draw_text(c, c == f_client);
     }
-}
+}   
 
 static void
 handle_configure_notify(XEvent *e)
@@ -1703,11 +1717,16 @@ client_move_to_front(struct client *c)
 static void
 client_monocle(struct client *c)
 {
-    int mon;
-    mon = ws_m_list[c->ws];
+    XEvent ev;
+    memset(&ev, 0, sizeof ev);
+
+    int mon = ws_m_list[c->ws];
+
     if (c->mono) {
         client_move_absolute(c, c->prev.x, c->prev.y);
         client_resize_absolute(c, c->prev.width, c->prev.height);
+        ev.xclient.data.l[0] = _NET_WM_STATE_REMOVE;
+        c->mono = false;
     } else {
         c->prev.x = c->geom.x;
         c->prev.y = c->geom.y;
@@ -1715,8 +1734,17 @@ client_monocle(struct client *c)
         c->prev.height = c->geom.height;
         client_move_absolute(c, m_list[mon].x + conf.left_gap, m_list[mon].y + conf.top_gap);
         client_resize_absolute(c, m_list[mon].width - conf.right_gap - conf.left_gap, m_list[mon].height - conf.top_gap - conf.bot_gap);
+        ev.xclient.data.l[0] = _NET_WM_STATE_ADD;
         c->mono = true;
     }
+
+    // tell the window it's maximized or not
+    ev.xclient.message_type = net_atom[NetWMState];
+    ev.xclient.data.l[1] = net_atom[NetWMStateMaximizedHorz];
+    ev.xclient.data.l[2] = net_atom[NetWMStateMaximizedHorz];
+    ev.xclient.data.l[3] = 0; // normal window
+    ev.xclient.format = 32;
+    XSendEvent(display, root, False, NoEventMask, &ev);
 }
 
 static void
@@ -2135,6 +2163,8 @@ setup(void)
     net_atom[NetWMCheck]                    = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
     net_atom[NetCurrentDesktop]             = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
     net_atom[NetWMState]                    = XInternAtom(display, "_NET_WM_STATE", False);
+    net_atom[NetWMStateMaximizedVert]       = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+    net_atom[NetWMStateMaximizedHorz]       = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
     net_atom[NetWMName]                     = XInternAtom(display, "_NET_WM_NAME", False);
     net_atom[NetClientList]                 = XInternAtom(display, "_NET_CLIENT_LIST", False);
     net_atom[NetWMWindowType]               = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
@@ -2300,9 +2330,7 @@ client_toggle_decorations(struct client *c)
  * Credit to tudurom and windowchef
  * as inspiration for this functionality
  */
-static void
-client_set_status(struct client *c)
-{
+static void client_set_status(struct client *c) {
     return;
 
     if (c == NULL)
@@ -2354,23 +2382,17 @@ client_set_status(struct client *c)
     free(str);
 }
 
-static void
-ewmh_set_fullscreen(struct client *c, bool fullscreen)
-{
+static void ewmh_set_fullscreen(struct client *c, bool fullscreen) {
     XChangeProperty(display, c->window, net_atom[NetWMState], XA_ATOM, 32,
             PropModeReplace, (unsigned char *)&net_atom[NetWMStateFullscreen], fullscreen ? 1 : 0 );
 }
 
-static void
-ewmh_set_viewport(void)
-{
+static void ewmh_set_viewport(void) {
     unsigned long data[2] = { 0, 0 };
     XChangeProperty(display, root, net_atom[NetDesktopViewport], XA_CARDINAL, 32, PropModeReplace, (unsigned char*)&data, 2);
 }
 
-static void
-ewmh_set_focus(struct client *c)
-{
+static void ewmh_set_focus(struct client *c) {
         XDeleteProperty(display, root, net_atom[NetActiveWindow]);
         f_client = c;
         /* Tell EWMH about our new window */
@@ -2486,8 +2508,7 @@ version(void)
 }
 
 static int
-xerror(Display *dpy, XErrorEvent *e)
-{
+xerror(Display *dpy, XErrorEvent *e) {
     /* this is stolen verbatim from katriawm which stole it from dwm lol */
     if (e->error_code == BadWindow ||
             (e->request_code == X_SetInputFocus && e->error_code == BadMatch) ||
@@ -2508,100 +2529,58 @@ xerror(Display *dpy, XErrorEvent *e)
     return xerrorxlib(dpy, e);
 }
 
-int
-get_actual_x(struct client *c)
-{
-    int b_width, i_width;
-
-    b_width = c->decorated ? conf.b_width : 0;
-    i_width = c->decorated ? conf.i_width : 0;
-
+int get_actual_x(struct client *c) {
+    int b_width = c->decorated ? conf.b_width : 0;
+    int i_width = c->decorated ? conf.i_width : 0;
     return c->geom.x - b_width - i_width;
 }
 
-
-int
-get_actual_y(struct client *c)
-{
-    int t_height, b_width, i_width;
-
-    t_height = c->decorated ? conf.t_height : 0;
-    b_width = c->decorated ? conf.b_width : 0;
-    i_width = c->decorated ? conf.i_width : 0;
-
+int get_actual_y(struct client *c) {
+    int t_height = c->decorated ? conf.t_height : 0;
+    int b_width = c->decorated ? conf.b_width : 0;
+    int i_width = c->decorated ? conf.i_width : 0;
     return c->geom.y - b_width - i_width - t_height;
 }
 
-int
-get_actual_width(struct client *c)
-{
-    int dec_width;
-
-    dec_width = get_dec_width(c);
-
+int get_actual_width(struct client *c) {
+    int dec_width = get_dec_width(c);
     return c->geom.width + dec_width;
 }
 
 int
-get_actual_height(struct client *c)
-{
-    int dec_height;
-
-    dec_height = get_dec_height(c);
-
+get_actual_height(struct client *c) {
+    int dec_height = get_dec_height(c);
     return c->geom.height + dec_height;
 }
 
-int
-get_dec_width(struct client *c)
-{
-    int b_width, i_width;
-
-    b_width = c->decorated ? conf.b_width : 0;
-    i_width = c->decorated ? conf.i_width : 0;
-
+int get_dec_width(struct client *c) {
+    int b_width = c->decorated ? conf.b_width : 0;
+    int i_width = c->decorated ? conf.i_width : 0;
     return 2 * (b_width + i_width);
 }
 
-int
-get_dec_height(struct client *c)
-{
-    int t_height, b_width, i_width, b_height;
-
-    t_height = c->decorated ? conf.t_height : 0;
-    b_width = c->decorated ? conf.b_width : 0;
-    i_width = c->decorated ? conf.i_width : 0;
-    b_height = c->decorated ? conf.bottom_height : 0;
-
+int get_dec_height(struct client *c) {
+    int t_height = c->decorated ? conf.t_height : 0;
+    int b_width = c->decorated ? conf.b_width : 0;
+    int i_width = c->decorated ? conf.i_width : 0;
+    int b_height = c->decorated ? conf.bottom_height : 0;
     return 2 * (b_width + i_width) + t_height + b_height;
 }
 
-int
-left_width(struct client *c)
-{
-    int b_width, i_width;
-
-    b_width = c->decorated ? conf.b_width : 0;
-    i_width = c->decorated ? conf.i_width : 0;
-
+int left_width(struct client *c) {
+    int b_width = c->decorated ? conf.b_width : 0;
+    int i_width = c->decorated ? conf.i_width : 0;
     return  b_width + i_width;
 }
 
-int
-top_height(struct client *c)
-{
-    int t_height, b_width, i_width;
-
-    t_height = c->decorated ? conf.t_height : 0;
-    b_width = c->decorated ? conf.b_width : 0;
-    i_width = c->decorated ? conf.i_width : 0;
-
+int top_height(struct client *c) {
+    int t_height = c->decorated ? conf.t_height : 0;
+    int b_width = c->decorated ? conf.b_width : 0;
+    int i_width = c->decorated ? conf.i_width : 0;
     return t_height + b_width + i_width;
 }
 
-int
-main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     int opt;
     char *conf_path = malloc(MAXLEN * sizeof(char));
     char *font_name = malloc(MAXLEN * sizeof(char));
@@ -2677,6 +2656,8 @@ main(int argc, char *argv[])
     LOGN("Shutting down window manager");
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         while (c_list[i] != NULL) {
+            // close them too because some won't end their process otherwise
+            client_close(c_list[i]);
             client_delete(c_list[i]);
         }
     }
