@@ -759,8 +759,8 @@ static void handle_button_press(XEvent *e) {
         XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
 
         if (c->decorated) {
-            extra_width + conf.t_height + conf.bottom_height;
-            conf.b_width + conf.i_width;
+            extra_width = extra_width + conf.t_height + conf.bottom_height;
+            extra_height = conf.b_width + conf.i_width;
         }
 
         if (wx > 0 && wy > 0 && wx < c->geom.width - extra_width && wy < c->geom.height - extra_height) {
