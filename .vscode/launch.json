@@ -5,7 +5,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/.o/berry",
+            "program": "${workspaceFolder}/berry",
             "args": ["-d"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

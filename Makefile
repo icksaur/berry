@@ -1,121 +1,41 @@
-# berry - a healthy, bite-sized window manager
-# See LICENSE file for copyright and license details.
+# Variables
+CC := gcc
+CFLAGS := -Wall -Wextra -Wredundant-decls -Wshadow -Wno-deprecated-declarations -pedantic -g
+LDFLAGS := -lX11 -lXinerama -lfontconfig -lfreetype -lXft
+IFLAGS := -I/usr/include/freetype2 -I/usr/include/libpng16 -I/usr/include/harfbuzz -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include
 
--include Config.mk
+# Detect source and header files
+C_SOURCES := $(wildcard *.c)
+HEADERS := $(wildcard *.h)
+OBJ_DIR := obj
+OBJECTS := $(addprefix $(OBJ_DIR)/,$(CPP_SOURCES:.cpp=.o)) $(addprefix $(OBJ_DIR)/,$(C_SOURCES:.c=.o))
 
-################ Source files ##########################################
+# Name of the output binary
+TARGET := berry
 
-berry	:= $O${name}
-berryc	:= ${berry}c
-srcs	:= $(wildcard *.c)
-objs	:= $(addprefix $O,$(srcs:.c=.o))
-deps	:= ${objs:.o=.d}
-confs	:= Config.mk config.h
-oname   := $(notdir $(abspath $O))
+# Rules
+.PHONY: all clean
 
-################ Compilation ###########################################
+all: $(OBJ_DIR) $(TARGET)
 
-.SUFFIXES:
-.PHONY: all clean distclean maintainer-clean
+install:
+	cp -f berry /usr/local/bin/berry
+	chmod 755 /usr/local/bin/berry
+	mkdir -p /usr/local/share/man/man1
+	cp -f berry.1 /usr/local/share/man/man1/berry.1
+	chmod 644 /usr/local/share/man/man1/berry.1
 
-all:	${berry} ${berryc}
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
 
-${berry}:	$Outils.o $Owm.o
-	@echo "Linking $@ ..."
-	@${CC} ${ldflags} -o $@ $^ ${libs}
+$(TARGET): $(OBJECTS)
+	$(CXX) $^ $(LDFLAGS) -o $@
 
-${berryc}:	$Oclient.o
-	@echo "Linking $@ ..."
-	@${CC} ${ldflags} -o $@ $^ ${libs}
+$(OBJ_DIR)/%.o: %.cpp $(HEADERS)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$O%.o:	%.c
-	@echo "    Compiling $< ..."
-	@${CC} ${cflags} -MMD -MT "$(<:.c=.s) $@" -o $@ -c $<
-
-%.s:	%.c
-	@echo "    Compiling $< to assembly ..."
-	@${CC} ${cflags} -S -o $@ -c $<
-
-################ Installation ##########################################
-
-.PHONY:	install installdirs
-.PHONY: uninstall uninstall-man
-
-ifdef bindir
-exed	:= ${DESTDIR}${bindir}
-berryi	:= ${exed}/$(notdir ${berry})
-berryci	:= ${exed}/$(notdir ${berryc})
-
-${exed}:
-	@echo "Creating $@ ..."
-	@${INSTALL} -d $@
-${berryi}:	${berry} | ${exed}
-	@echo "Installing $@ ..."
-	@${INSTALL_PROGRAM} $< $@
-${berryci}:	${berryc} | ${exed}
-	@echo "Installing $@ ..."
-	@${INSTALL_PROGRAM} $< $@
-
-installdirs:	${exed}
-install:	${berryi} ${berryci}
-uninstall:
-	@if [ -f ${exei} ]; then\
-	    echo "Removing ${berryi} and ${berryci} ...";\
-	    rm -f ${berryi} ${berryci};\
-	fi
-endif
-ifdef man1dir
-mand	:= ${DESTDIR}${man1dir}
-mani	:= ${mand}/${name}.1
-manci	:= ${mand}/${name}c.1
-
-${mand}:
-	@echo "Creating $@ ..."
-	@${INSTALL} -d $@
-${mani}:	${name}.1 | ${mand}
-	@echo "Installing $@ ..."
-	@${INSTALL_DATA} $< $@
-${manci}:	${name}c.1 | ${mand}
-	@echo "Installing $@ ..."
-	@${INSTALL_DATA} $< $@
-
-installdirs:	${mand}
-install:	${mani} ${manci}
-uninstall:	uninstall-man
-uninstall-man:
-	@if [ -f ${mani} ]; then\
-	    echo "Removing ${mani} and ${manci} ...";\
-	    rm -f ${mani} ${manci};\
-	fi
-endif
-
-################ Maintenance ###########################################
+$(OBJ_DIR)/%.o: %.c $(HEADERS)
+	$(CC) $(CFLAGS) $(IFLAGS) -c $< -o $@
 
 clean:
-	@if [ -d ${builddir} ]; then\
-	    rm -f ${berry} ${berryc} ${objs} ${deps} $O.d;\
-	    rmdir ${builddir};\
-	fi
-
-distclean:	clean
-	@rm -f ${oname} ${confs} config.status
-
-maintainer-clean: distclean
-
-${builddir}/.d:
-	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
-	@touch $@
-$O.d:	| ${builddir}/.d
-	@[ -h ${oname} ] || ln -sf ${builddir} ${oname}
-
-${objs}:	Makefile ${confs} | $O.d
-config.h:	config.h.in | Config.mk
-Config.mk:	Config.mk.in
-${confs}:	configure
-	@if [ -x config.status ]; then echo "Reconfiguring ...";\
-	    ./config.status;\
-	else echo "Running configure ...";\
-	    ./configure;\
-	fi
-
--include ${deps}
+	rm -rf $(TARGET) $(OBJ_DIR)

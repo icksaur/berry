@@ -24,7 +24,6 @@
 #include <xcb/xcb_ewmh.h>
 
 #include "globals.h"
-#include "ipc.h"
 #include "types.h"
 #include "utils.h"
 
@@ -116,26 +115,6 @@ static void handle_expose(XEvent *e);
 static void handle_property_notify(XEvent *e);
 static void handle_enter_notify(XEvent *e);
 
-/* IPC client functions */
-static void ipc_monocle(long *d);
-static void ipc_raise(long *d);
-static void ipc_toggle_decorations(long *d);
-static void ipc_window_close(long *d);
-static void ipc_window_center(long *d);
-static void ipc_window_hide(long *d);
-static void ipc_switch_ws(long *d);
-static void ipc_send_to_ws(long *d);
-static void ipc_fullscreen(long *d);
-static void ipc_fullscreen_state(long *d);
-static void ipc_snap_left(long *d);
-static void ipc_snap_right(long *d);
-static void ipc_cycle_focus(long *d);
-static void ipc_pointer_focus(long *d);
-static void ipc_config(long *d);
-static void ipc_save_monitor(long *d);
-static void ipc_set_font(long *d);
-static void ipc_edge_gap(long *d);
-
 static void monitors_free(void);
 static void monitors_setup(void);
 
@@ -169,7 +148,6 @@ static int top_height(struct client *c);
 static Bool window_is_undecorated(Window window);
 
 typedef void (*x11_event_handler_t)(XEvent *e);
-typedef void (*ipc_event_handler_t)(long *e);
 
 /* Native X11 Event handler */
 static const x11_event_handler_t event_handler [LASTEvent] = {
@@ -187,27 +165,6 @@ static const x11_event_handler_t event_handler [LASTEvent] = {
     [Expose]           = handle_expose,
     [FocusIn]          = handle_focus,
     [EnterNotify]      = handle_enter_notify,
-};
-
-static const ipc_event_handler_t ipc_handler [IPCLast] = {
-    [IPCWindowMonocle]            = ipc_monocle,
-    [IPCWindowRaise]              = ipc_raise,
-    [IPCWindowToggleDecorations]  = ipc_toggle_decorations,
-    [IPCWindowClose]              = ipc_window_close,
-    [IPCWindowCenter]             = ipc_window_center,
-    [IPCSwitchWorkspace]          = ipc_switch_ws,
-    [IPCSendWorkspace]            = ipc_send_to_ws,
-    [IPCFullscreen]               = ipc_fullscreen,
-    [IPCFullscreenState]          = ipc_fullscreen_state,
-    [IPCSnapLeft]                 = ipc_snap_left,
-    [IPCSnapRight]                = ipc_snap_right,
-    [IPCCycleFocus]               = ipc_cycle_focus,
-    [IPCPointerFocus]             = ipc_pointer_focus,
-    [IPCSaveMonitor]              = ipc_save_monitor,
-    [IPCSetFont]                  = ipc_set_font,
-    [IPCEdgeGap]                  = ipc_edge_gap,
-    [IPCConfig]                   = ipc_config,
-    [IPCWindowHide]               = ipc_window_hide,
 };
 
 typedef struct {
@@ -558,18 +515,7 @@ handle_client_message(XEvent *e)
     long cmd, *data;
     LOGP("client message is %lu", cme->message_type);
     LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
-    if (cme->message_type == net_berry[BerryClientEvent])
-    {
-        LOGN("Recieved event from berryc");
-        if (cme->format != 32) {
-			LOGN("Wrong format, ignoring event");
-			return;
-		}
-        cmd = cme->data.l[0];
-        data = cme->data.l;
-        ipc_handler[cmd](data);
-    }
-    else if (cme->message_type == net_atom[NetWMState]) {
+    if (cme->message_type == net_atom[NetWMState]) {
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL) {
             LOGN("client not found...");
@@ -1116,326 +1062,6 @@ client_hide(struct client *c)
         client_move_absolute(c, display_width + conf.b_width, c->geom.y);
         c->hidden = true;
     }
-}
-
-static void
-ipc_monocle(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-
-    client_monocle(f_client);
-}
-
-static void
-ipc_raise(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-
-    client_raise(f_client);
-}
-
-static void
-ipc_toggle_decorations(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return ;
-
-    client_toggle_decorations(f_client);
-}
-
-static void
-ipc_window_close(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-
-    client_close(f_client);
-}
-
-static void
-ipc_window_center(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-    client_center(f_client);
-}
-
-static void
-ipc_window_hide(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-    client_hide(f_client);
-    client_manage_focus(NULL);
-}
-
-static void
-ipc_switch_ws(long *d)
-{
-    int ws = d[1];
-    LOGP("IPC says switch to workspace %d", ws);
-    switch_ws(ws);
-}
-
-static void
-ipc_send_to_ws(long *d)
-{
-    if (f_client == NULL)
-        return;
-
-    int ws = d[1];
-    client_send_to_ws(f_client, ws);
-}
-
-static void
-ipc_fullscreen(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-
-    client_fullscreen(f_client, true, true, true);
-}
-
-static void
-ipc_fullscreen_state(long *d)
-{
-    UNUSED(d);
-
-    if (f_client == NULL)
-        return;
-
-    client_fullscreen(f_client, true, true, false);
-}
-
-static void
-ipc_snap_left(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-
-    client_snap_left(f_client);
-}
-
-static void
-ipc_snap_right(long *d)
-{
-    UNUSED(d);
-    if (f_client == NULL)
-        return;
-
-    client_snap_right(f_client);
-}
-
-static void
-ipc_cycle_focus(long *d)
-{
-    UNUSED(d);
-    focus_next(f_client);
-}
-
-static void
-ipc_pointer_focus(long *d)
-{
-    UNUSED(d);
-    /* Shoutout to vain for this methodology */
-    int x, y, di;
-    unsigned int dui;
-    Window child, dummy;
-    struct client *c;
-
-    XQueryPointer(display, root, &dummy, &child, &x, &y, &di, &di, &dui);
-    c = get_client_from_window(child);
-
-    if (c != NULL)
-    {
-        /* Focus the client for either type of event
-         * However, don't change focus if the client is already focused
-         * otherwise menu's will be hidden behind the parent window
-         */
-        if (c != f_client) {
-            client_manage_focus(c);
-            switch_ws(c->ws);
-        }
-    }
-    else 
-    {
-        LOGN("Window has no client, could be orphaned decorations.");
-    }
-}
-
-static void
-ipc_config(long *d)
-{
-    enum IPCCommand cmd = d[1];
-    LOGP("Handling config command of type %ld", d[1]);
-    LOGP("Data has value %ld", d[2]);
-
-    switch (cmd) {
-        case IPCFocusColor:
-            conf.bf_color = d[2];
-            break;
-        case IPCUnfocusColor:
-            conf.bu_color = d[2];
-            break;
-        case IPCInnerFocusColor:
-            conf.if_color = d[2];
-            break;
-        case IPCInnerUnfocusColor:
-            conf.iu_color = d[2];
-            break;
-        case IPCTitleFocusColor:
-            load_color(&xft_focus_color, d[2]);
-            break;
-        case IPCTitleUnfocusColor:
-            load_color(&xft_unfocus_color, d[2]);
-            break;
-        case IPCBorderWidth:
-            conf.b_width = d[2];
-            break;
-        case IPCInnerBorderWidth:
-            conf.i_width = d[2];
-            break;
-        case IPCTitleHeight:
-            conf.t_height = d[2];
-            break;
-        case IPCBottomHeight:
-            conf.bottom_height = d[2];
-            break;
-        case IPCEdgeGap:
-            conf.top_gap = d[2];
-            conf.bot_gap = d[3];
-            break;
-        case IPCTopGap:
-            conf.top_gap = d[2];
-            break;
-        case IPCManage:
-            conf.manage[(int)d[2]] = true;
-            break;
-        case IPCFullscreenRemoveDec:
-            conf.fs_remove_dec = d[2];
-            break;
-        case IPCUnmanage:
-            conf.manage[(int)d[2]] = false;
-            break;
-        case IPCQuit:
-            running = false;
-            break;
-        case IPCDecorate:
-            conf.decorate = d[2];
-            break;
-        case IPCDrawText:
-            conf.draw_text = d[2];
-            break;
-        case IPCMoveButton:
-            ungrab_buttons();
-            conf.move_button = (d[2] == 0) ? conf.move_button : d[2];
-
-            grab_buttons();
-            break;
-        case IPCMoveMask:
-            ungrab_buttons();
-            conf.move_mask = (d[2] == 0) ? conf.move_mask : d[2];
-            grab_buttons();
-            break;
-        case IPCResizeButton:
-            ungrab_buttons();
-            conf.resize_button = (d[2] == 0) ? conf.resize_button : d[2];
-            grab_buttons();
-            break;
-        case IPCResizeMask:
-            ungrab_buttons();
-            conf.resize_mask = (d[2] == 0) ? conf.resize_mask : d[2];
-            grab_buttons();
-            break;
-        case IPCPointerInterval:    
-            conf.pointer_interval = d[2];
-            break;
-        case IPCFocusFollowsPointer:
-            conf.follow_pointer = d[2];
-            break;
-        case IPCWarpPointer:
-            conf.warp_pointer = d[2];
-            break;
-        default:
-            break;
-    }
-
-    refresh_config();
-}
-
-static void
-ipc_edge_gap(long *d)
-{
-    int top, bot, left, right;
-    top = d[1];
-    bot = d[2];
-    left = d[3];
-    right = d[4];
-
-    conf.top_gap = top;
-    conf.bot_gap = bot;
-    conf.left_gap = left;
-    conf.right_gap = right;
-
-    LOGN("Changing edge gap...");
-
-    refresh_config();
-}
-
-static void
-ipc_save_monitor(long *d)
-{
-    int ws, mon;
-    ws = d[1];
-    mon = d[2];
-
-    if (mon >= m_count) {
-        LOGN("Cannot save monitor, number is too high");
-        return;
-    }
-
-    LOGP("Saving ws %d to monitor %d", ws, mon);
-
-    /* Associate the given workspace to the given monitor */
-    ws_m_list[ws] = mon;
-    ewmh_set_viewport();
-}
-
-static void
-ipc_set_font(long *d)
-{
-    UNUSED(d);
-    XTextProperty font_prop;
-    char** font_list;
-    int err, n;
-    LOGN("Handling new set_font request");
-
-    font_list = NULL;
-    LOGN("Getting text property");
-    XGetTextProperty(display, root, &font_prop, net_berry[BerryFontProperty]);
-    LOGN("Converting to text list");
-    err = XmbTextPropertyToTextList(display, &font_prop, &font_list, &n);
-    strncpy(global_font, font_list[0], sizeof(global_font));
-    LOGN("Opening font by name");
-    font = XftFontOpenName(display, screen, global_font);
-    if (font == NULL) {
-        LOGN("Error, could not open font name");
-        return;
-    }
-    refresh_config();
-    if (err >= Success && n > 0 && *font_list)
-        XFreeStringList(font_list);
-    XFree(font_prop.value);
 }
 
 static void
@@ -2078,9 +1704,7 @@ client_set_title(struct client *c)
 }
 
 
-static void
-setup(void)
-{
+static void setup(void) {
     unsigned long data[1], data2[1];
     int mon;
     XSetWindowAttributes wa = { .override_redirect = true };

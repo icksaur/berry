@@ -7,7 +7,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "ipc.h"
+enum WindowType {
+    Dock,
+    Dialog,
+    Toolbar,
+    Menu,
+    Splash,
+    Utility,
+    WindowLast
+};
 
 struct client_geom {
     int x, y, width, height;
