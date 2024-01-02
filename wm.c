@@ -1439,8 +1439,7 @@ ipc_set_font(long *d)
 }
 
 static void
-load_color(XftColor *dest_color, unsigned long raw_color)
-{
+load_color(XftColor *dest_color, unsigned long raw_color) {
     XColor x_color;
     x_color.pixel = raw_color;
     XQueryColor(display, DefaultColormap(display, screen), &x_color);
@@ -1455,9 +1454,7 @@ load_color(XftColor *dest_color, unsigned long raw_color)
 }
 
 
-static void
-load_config(char *conf_path)
-{
+static void load_config(char *conf_path) {
     if (fork() == 0) {
         setsid();
         execl("/bin/sh", "sh", conf_path, NULL);
@@ -1465,9 +1462,7 @@ load_config(char *conf_path)
     }
 }
 
-static void
-client_manage_focus(struct client *c)
-{
+static void client_manage_focus(struct client *c) {
     if (c != NULL && f_client != NULL) {
         client_set_color(f_client, conf.iu_color, conf.bu_color);
         draw_text(f_client, false);
@@ -2395,6 +2390,7 @@ static void ewmh_set_viewport(void) {
 static void ewmh_set_focus(struct client *c) {
         XDeleteProperty(display, root, net_atom[NetActiveWindow]);
         f_client = c;
+        reorder_focus();
         /* Tell EWMH about our new window */
         XChangeProperty(display, root, net_atom[NetActiveWindow], XA_WINDOW, 32, PropModeReplace, (unsigned char *) &(c->window), 1);
 }
@@ -2656,8 +2652,6 @@ int main(int argc, char *argv[]) {
     LOGN("Shutting down window manager");
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         while (c_list[i] != NULL) {
-            // close them too because some won't end their process otherwise
-            client_close(c_list[i]);
             client_delete(c_list[i]);
         }
     }
