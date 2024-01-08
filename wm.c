@@ -88,6 +88,7 @@ static void client_snap_right(struct client *c);
 static void client_toggle_decorations(struct client *c);
 static void client_set_status(struct client *c);
 static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y);
+static void client_update_state(struct client *c);
 
 /* EWMH functions */
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen);
@@ -847,6 +848,15 @@ static void client_try_drag(struct client * c, int dragged, int is_move, int x, 
 }
 
 static void
+client_update_state(struct client *c) {
+    long data[2];
+    data[0] = c->hidden ? IconicState : NormalState; // NormalState, IconicState, etc.
+    data[1] = None;  // Icon window, if applicable
+    XChangeProperty(display, c->window, XInternAtom(display, "WM_STATE", False), 
+                    XA_ATOM, 32, PropModeReplace, (unsigned char *)data, 2);
+}
+
+static void
 handle_expose(XEvent *e)
 {
     XExposeEvent *ev = &e->xexpose;
@@ -1062,6 +1072,8 @@ client_hide(struct client *c)
         client_move_absolute(c, display_width + conf.b_width, c->geom.y);
         c->hidden = true;
     }
+
+    client_update_state(c);
 }
 
 static void
@@ -1238,6 +1250,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     client_manage_focus(c);
+    client_update_state(c);
 }
 
 static int
@@ -1860,6 +1873,7 @@ client_show(struct client *c)
         client_move_absolute(c, c->x_hide, c->geom.y);
         client_raise(c);
         c->hidden = false;
+        client_update_state(c);
     }
 }
 
