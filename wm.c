@@ -1333,7 +1333,7 @@ client_notify_move(struct client * c) {
     cev.x = c->geom.x + (c->decorated ? (conf.b_width + conf.i_width) : 0);
     cev.y = c->geom.y + (c->decorated ? (conf.b_width + conf.i_width + conf.t_height) : 0);
     cev.width = c->geom.width - (c->decorated ? (conf.b_width + conf.i_width) : 0);
-    cev.height = c->geom.width - (c->decorated ? (conf.b_width + conf.i_width + conf.t_height) : 0);
+    cev.height = c->geom.height - (c->decorated ? (conf.b_width + conf.i_width + conf.t_height + conf.bottom_height) : 0);
     cev.override_redirect = False;
     cev.border_width = 0;
     cev.above = None;
