@@ -70,6 +70,7 @@ static void client_hide(struct client *c);
 static void client_manage_focus(struct client *c);
 static void client_move_absolute(struct client *c, int x, int y);
 static void client_move_relative(struct client *c, int x, int y);
+static void client_notify_move(struct client *c);
 static void client_move_to_front(struct client *c);
 static void client_monocle(struct client *c);
 static void client_place(struct client *c);
@@ -902,7 +903,7 @@ handle_property_notify(XEvent *e)
         client_set_title(c);
         draw_text(c, c == f_client);
     }
-}   
+}
 
 static void
 handle_configure_notify(XEvent *e)
@@ -918,7 +919,7 @@ handle_configure_notify(XEvent *e)
         monitors_free();
         monitors_setup();
     }
-}
+}   
 
 static void
 handle_configure_request(XEvent *e)
@@ -1243,8 +1244,9 @@ manage_new_window(Window w, XWindowAttributes *wa)
     XMapWindow(display, c->window);
     XMapWindow(display, c->dec);
     // XFlush(display); // show window with decorations immediately
-    XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
-    XSelectInput(display, c->dec, SubstructureRedirectMask);
+    // XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
+    XSelectInput(display, c->window, StructureNotifyMask); // unmapnotify for removing clients
+    //XSelectInput(display, c->dec, SubstructureRedirectMask);
     XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1);
     XSetWMProtocols(display, c->dec, &wm_atom[WMDeleteWindow], 1);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
@@ -1315,6 +1317,28 @@ client_move_absolute(struct client *c, int x, int y)
         c->mono = false;
 
     client_set_status(c);
+    client_notify_move(c);
+}
+
+static void
+client_notify_move(struct client * c) {
+    // comply with ICCCW
+    XConfigureEvent cev;
+    cev.type = ConfigureNotify;
+    cev.send_event = True;
+    cev.serial = 0;
+    cev.window = c->window;
+    cev.event = c->window;
+    cev.display = display;
+    cev.x = c->geom.x + (c->decorated ? (conf.b_width + conf.i_width) : 0);
+    cev.y = c->geom.y + (c->decorated ? (conf.b_width + conf.i_width + conf.t_height) : 0);
+    cev.width = c->geom.width - (c->decorated ? (conf.b_width + conf.i_width) : 0);
+    cev.height = c->geom.width - (c->decorated ? (conf.b_width + conf.i_width + conf.t_height) : 0);
+    cev.override_redirect = False;
+    cev.border_width = 0;
+    cev.above = None;
+    LOGP("sending ConfigureNotify to client at position (%d,%d)", cev.x, cev.y);
+    XSendEvent(display, c->window, False, StructureNotifyMask, (XEvent*)&cev);
 }
 
 static void
