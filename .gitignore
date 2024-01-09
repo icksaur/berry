@@ -1,3 +1,5 @@
+berry
 .o
 config.status
 Config.mk
+obj/*
