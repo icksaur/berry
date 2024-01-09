@@ -54,6 +54,7 @@ static Time last_release = 0; /* double-click detection */
 static int alt_tabbing = 0;
 static unsigned int alt_keycode;
 static unsigned int tab_keycode;
+static unsigned int flight = True;
 
 /* All functions */
 
@@ -146,6 +147,7 @@ static int get_dec_width(struct client *c);
 static int get_dec_height(struct client *c);
 static int left_width(struct client *c);
 static int top_height(struct client *c);
+static void feature_toggle(void);
 
 static Bool window_is_undecorated(Window window);
 
@@ -186,6 +188,7 @@ static const launcher launchers[] = {
     { XK_f, NULL, NULL },
     { XK_q, NULL, NULL },
     { XK_i, NULL, NULL },
+    { XK_plus, NULL, NULL },
 };
 
 static const launcher nomod_launchers[] = {
@@ -286,26 +289,15 @@ draw_text(struct client *c, bool focused)
     XftDrawDestroy(draw);
 }
 
-/* Communicate with the given Client, kindly telling it to close itself
- * and terminate any associated processes using the WM_DELETE_WINDOW protocol
- */
-static void
-client_close(struct client *c)
-{
-    XEvent ev;
-    ev.type = ClientMessage;
-    ev.xclient.window = c->window;
-    ev.xclient.message_type = wm_atom[WMProtocols];
-    ev.xclient.format = 32;
-    ev.xclient.data.l[0] = wm_atom[WMDeleteWindow];
-    ev.xclient.data.l[1] = CurrentTime;
-    XSendEvent(display, c->window, False, NoEventMask, &ev);
-    LOGN("Closing window...");
+// Try to close a window using soft close protocol.  If it's not supported, destroy the window.
+static void client_close(struct client *c) {   
+    if (!manage_xsend_icccm(c, wm_atom[WMDeleteWindow])) {
+        XDestroyWindow(display, c->window);
+    }
 }
 
-/* Create new "dummy" windows to be used as decorations for the given client */
-static void
-client_decorations_create(struct client *c)
+// create decoration window 
+static void client_decorations_create(struct client *c)
 {
     int w = c->geom.width + 2 * conf.i_width;
     int h = c->geom.height + 2 * conf.i_width + conf.t_height + conf.bottom_height;
@@ -606,7 +598,8 @@ handle_key_press(XEvent *e) {
             case XK_c: client_center(f_client); return;
             case XK_q: client_close(f_client); return;
             case XK_i: client_toggle_decorations(f_client); return;
-        }
+            case XK_plus: feature_toggle(); return;
+            }
     } else if (ev->state == 0) {
         for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
             if (nomod_launchers[i].keysym == keysym && nomod_launchers[i].file) {
@@ -1247,7 +1240,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
     // XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
     XSelectInput(display, c->window, StructureNotifyMask); // unmapnotify for removing clients
     //XSelectInput(display, c->dec, SubstructureRedirectMask);
-    XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1);
+    //XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1); // no this is wrong
     XSetWMProtocols(display, c->dec, &wm_atom[WMDeleteWindow], 1);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
@@ -2236,6 +2229,10 @@ int top_height(struct client *c) {
     int b_width = c->decorated ? conf.b_width : 0;
     int i_width = c->decorated ? conf.i_width : 0;
     return t_height + b_width + i_width;
+}
+
+static void feature_toggle() {
+    flight = !flight;
 }
 
 int main(int argc, char *argv[]) {
