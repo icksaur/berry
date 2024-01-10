@@ -14,8 +14,10 @@
         },
         {
             "label": "xephyr",
+            "type": "shell",
             "command": "${workspaceFolder}/runxeph.sh",
-            "dependsOn": "build"
+            "dependsOn": "build",
+            "problemMatcher": []
         }
     ]
 }

@@ -91,6 +91,7 @@ static void client_toggle_decorations(struct client *c);
 static void client_set_status(struct client *c);
 static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y);
 static void client_update_state(struct client *c);
+static void client_add_state(struct client *c, int wm_state);
 
 /* EWMH functions */
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen);
@@ -188,7 +189,7 @@ static const launcher launchers[] = {
     { XK_f, NULL, NULL },
     { XK_q, NULL, NULL },
     { XK_i, NULL, NULL },
-    { XK_plus, NULL, NULL },
+    { XK_KP_Add, NULL, NULL },
 };
 
 static const launcher nomod_launchers[] = {
@@ -354,9 +355,7 @@ client_decorations_destroy(struct client *c)
 /* Remove the given Client from the list of currently managed clients
  * Does not free the given client from memory.
  * */
-static void
-client_delete(struct client *c)
-{
+static void client_delete(struct client *c) {
     int ws;
     ws = c->ws;
 
@@ -365,7 +364,9 @@ client_delete(struct client *c)
         return;
     }
 
-    /* Delete in the stack */
+    struct client *next = c->f_next;
+
+    // delete in client list
     if (c_list[ws] == c) {
         c_list[ws] = c_list[ws]->next;
     } else {
@@ -377,22 +378,41 @@ client_delete(struct client *c)
             tmp->next = tmp->next->next;
     }
 
-    /* Delete in the focus list */
-    /* I'll factor this out later */
-    /* Or actually it might not be so easy... */
-    if (f_list[ws] == c) {
-        f_list[ws] = f_list[ws]->f_next;
-    } else {
-        struct client *tmp = f_list[ws];
-        while (tmp != NULL && tmp->f_next != c)
-            tmp = tmp->f_next;
-
-        if (tmp)
-            tmp->f_next = tmp->f_next->f_next;
+    if (c == f_client) {
+        f_client = c->f_next;
+        if (f_client == NULL)
+            f_client = f_list;
     }
 
-    if (c_list[ws] == NULL)
-        f_client = NULL;
+    // delete in focus list
+    if (flight) {
+        struct client **cur = &f_list[ws];
+        while (*cur != c)
+            cur = &(*c->f_next);
+        *cur = (*cur)->f_next;
+    }
+    else
+    {
+        if (f_list[ws] == c) {
+            f_list[ws] = f_list[ws]->f_next;
+        } else {
+            struct client *tmp = f_list[ws];
+            while (tmp != NULL && tmp->f_next != c)
+                tmp = tmp->f_next;
+
+            if (tmp)
+                tmp->f_next = tmp->f_next->f_next;
+        }
+    }
+
+    // need to focus a new window
+    if (f_client == c)
+        f_client = next ? next : f_list;
+        
+    if (f_client) {
+        client_manage_focus(f_client);
+        client_move_to_front(f_client);
+    }
 
     ewmh_set_client_list();
 }
@@ -521,9 +541,13 @@ handle_client_message(XEvent *e)
         if (action == net_atom[NetWMStateMaximizedHorz] || action == net_atom[NetWMStateMaximizedVert]) {
             switch (cme->data.l[0]) {
                 case _NET_WM_STATE_ADD:
+                    if (!c->mono) client_monocle(c);
+                    break;
                 case _NET_WM_STATE_REMOVE:
+                    if (c->mono) client_monocle(c);
+                    break;
                 case _NET_WM_STATE_TOGGLE:
-                    client_monocle(c); // toggle maximize
+                    client_monocle(c);
                     break;
             }
         }
@@ -598,7 +622,7 @@ handle_key_press(XEvent *e) {
             case XK_c: client_center(f_client); return;
             case XK_q: client_close(f_client); return;
             case XK_i: client_toggle_decorations(f_client); return;
-            case XK_plus: feature_toggle(); return;
+            case XK_KP_Add: feature_toggle(); return;
             }
     } else if (ev->state == 0) {
         for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
@@ -834,20 +858,75 @@ static void client_try_drag(struct client * c, int dragged, int is_move, int x, 
                     LOGP("move nx: %d, ny: %d, ev.x: %d, ev.y: %d", nx, ny, ev.xmotion.x, ev.xmotion.y);
                     client_move_absolute(c, nx, ny);
                 }
-                // XFlush(display); // not needed?
                 break;
         }
     } while (ev.type != ButtonRelease);
     XUngrabPointer(display, CurrentTime);
 }
 
-static void
-client_update_state(struct client *c) {
+static void client_update_state(struct client *c) {
     long data[2];
     data[0] = c->hidden ? IconicState : NormalState; // NormalState, IconicState, etc.
     data[1] = None;  // Icon window, if applicable
     XChangeProperty(display, c->window, XInternAtom(display, "WM_STATE", False), 
                     XA_ATOM, 32, PropModeReplace, (unsigned char *)data, 2);
+
+    if (flight) {
+        return;
+    }
+
+    Atom actualType;
+    int format;
+    unsigned long num_items, bytes_after;
+    Atom* states = NULL;
+    Bool set_maximized = c->mono == True;
+    Bool horz_found = False;
+    Bool vert_found = False;
+    Bool list_changed = False;
+    if (!XGetWindowProperty(display, c->window, net_atom[NetWMState], 0, LONG_MAX, False, XA_ATOM,
+        &actualType, &format, &num_items, &bytes_after,  (unsigned char **)&states) == Success)
+        return;
+
+    if (!states)
+        return;
+
+    Atom * atoms = (Atom*)malloc(sizeof(Atom) * num_items + 2);
+    int new_num_atoms = 0;
+
+    for (unsigned long i = 0; i < num_items; i++) {
+        if (states[i] == net_atom[NetWMStateMaximizedHorz] || states[i] == net_atom[NetWMStateMaximizedVert]) {
+            if (!set_maximized) {
+                list_changed = True;
+                continue;
+            }
+            if (states[i] == net_atom[NetWMStateMaximizedHorz]) {
+                horz_found = True;
+            } else if (states[i] == net_atom[NetWMStateMaximizedVert]) {
+                vert_found = True;
+            }
+            atoms[new_num_atoms++] = states[i];
+        }
+    }
+
+    XFree(states);
+
+    if (set_maximized) {
+        if (horz_found == False) {
+            atoms[new_num_atoms++] = net_atom[NetWMStateMaximizedHorz];
+            list_changed = true;
+        }
+        if (vert_found == False) {
+            atoms[new_num_atoms++] = net_atom[NetWMStateMaximizedVert];
+            list_changed = True;
+        }
+    }
+
+    if (list_changed) {
+        XChangeProperty(display, c->window, net_atom[NetWMStateMaximizedVert], XA_ATOM, 32,
+        PropModeReplace, (unsigned char*)atoms, new_num_atoms);
+    }
+
+    free(atoms);
 }
 
 static void
@@ -1306,8 +1385,9 @@ client_move_absolute(struct client *c, int x, int y)
     c->geom.x = x;
     c->geom.y = y;
 
-    if (c->mono)
+    if (c->mono) {
         c->mono = false;
+    }
 
     client_set_status(c);
     client_notify_move(c);
@@ -1389,13 +1469,17 @@ client_monocle(struct client *c)
         c->mono = true;
     }
 
-    // tell the window it's maximized or not
-    ev.xclient.message_type = net_atom[NetWMState];
-    ev.xclient.data.l[1] = net_atom[NetWMStateMaximizedHorz];
-    ev.xclient.data.l[2] = net_atom[NetWMStateMaximizedHorz];
-    ev.xclient.data.l[3] = 0; // normal window
-    ev.xclient.format = 32;
-    XSendEvent(display, root, False, NoEventMask, &ev);
+    if (!flight) {
+        client_update_state(c);
+    } else {
+        // tell the window it's maximized or not
+        ev.xclient.message_type = net_atom[NetWMState];
+        ev.xclient.data.l[1] = net_atom[NetWMStateMaximizedHorz];
+        ev.xclient.data.l[2] = net_atom[NetWMStateMaximizedVert];
+        ev.xclient.data.l[3] = 0; // normal window
+        ev.xclient.format = 32;
+        XSendEvent(display, root, False, NoEventMask, &ev);
+    }
 }
 
 static void
@@ -1971,9 +2055,6 @@ client_toggle_decorations(struct client *c)
     else {
         client_decorations_show(c);
     }
-    //client_raise(c);
-    //client_manage_focus(c);
-    //ewmh_set_frame_extents(c);
 }
 
 /*
