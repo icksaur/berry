@@ -380,15 +380,13 @@ static void client_delete(struct client *c) {
 
     if (c == f_client) {
         f_client = c->f_next;
-        if (f_client == NULL)
-            f_client = f_list;
     }
 
     // delete in focus list
     if (flight) {
         struct client **cur = &f_list[ws];
         while (*cur != c)
-            cur = &(*c->f_next);
+            cur = &((*cur)->f_next);
         *cur = (*cur)->f_next;
     }
     else
@@ -1469,17 +1467,7 @@ client_monocle(struct client *c)
         c->mono = true;
     }
 
-    if (!flight) {
-        client_update_state(c);
-    } else {
-        // tell the window it's maximized or not
-        ev.xclient.message_type = net_atom[NetWMState];
-        ev.xclient.data.l[1] = net_atom[NetWMStateMaximizedHorz];
-        ev.xclient.data.l[2] = net_atom[NetWMStateMaximizedVert];
-        ev.xclient.data.l[3] = 0; // normal window
-        ev.xclient.format = 32;
-        XSendEvent(display, root, False, NoEventMask, &ev);
-    }
+    client_update_state(c);
 }
 
 static void
