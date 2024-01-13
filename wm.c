@@ -383,25 +383,10 @@ static void client_delete(struct client *c) {
     }
 
     // delete in focus list
-    if (flight) {
-        struct client **cur = &f_list[ws];
-        while (*cur != c)
-            cur = &((*cur)->f_next);
-        *cur = (*cur)->f_next;
-    }
-    else
-    {
-        if (f_list[ws] == c) {
-            f_list[ws] = f_list[ws]->f_next;
-        } else {
-            struct client *tmp = f_list[ws];
-            while (tmp != NULL && tmp->f_next != c)
-                tmp = tmp->f_next;
-
-            if (tmp)
-                tmp->f_next = tmp->f_next->f_next;
-        }
-    }
+    struct client **cur = &f_list[ws];
+    while (*cur != c)
+        cur = &((*cur)->f_next);
+    *cur = (*cur)->f_next;
 
     // need to focus a new window
     if (f_client == c)
@@ -481,10 +466,6 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
 static void
 focus_next(struct client *c)
 {
-    if (f_client == NULL) {
-        return;
-    }
-
     int ws = c != NULL ? c->ws : curr_ws;
 
     if (c == NULL) {
@@ -869,10 +850,8 @@ static void client_update_state(struct client *c) {
     XChangeProperty(display, c->window, XInternAtom(display, "WM_STATE", False), 
                     XA_ATOM, 32, PropModeReplace, (unsigned char *)data, 2);
 
-    if (flight) {
-        return;
-    }
 
+    // the rest of this tries to add or remove horizontal state as needed
     Atom actualType;
     int format;
     unsigned long num_items, bytes_after;
@@ -1145,6 +1124,7 @@ client_hide(struct client *c)
     }
 
     client_update_state(c);
+    client_manage_focus(NULL);
 }
 
 static void
@@ -1852,6 +1832,9 @@ static void setup(void) {
     normal_cursor = XCreateFontCursor(display, XC_left_ptr);
     XDefineCursor(display, root, normal_cursor);
 
+    check = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
+    nofocus = XCreateSimpleWindow(display, root, -10, -10, 1, 1, 0, 0, 0);
+
     LOGN("selecting root input");
     XSelectInput(display, root,
                  StructureNotifyMask | SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask | Button1Mask);
@@ -1859,17 +1842,17 @@ static void setup(void) {
 
     for (long unsigned int i = 0; i < num_launchers; i++) {
         XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
+        XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus, True, GrabModeAsync, GrabModeAsync);
     }
 
     for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
         XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+        XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, nofocus, True, GrabModeAsync, GrabModeAsync);
     }
 
     LOGN("selected root input");
     xerrorxlib = XSetErrorHandler(xerror);
 
-    check = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
-    nofocus = XCreateSimpleWindow(display, root, -10, -10, 1, 1, 0, 0, 0);
     XChangeWindowAttributes(display, nofocus, CWOverrideRedirect, &wa);
     XMapWindow(display, nofocus);
     client_manage_focus(NULL);
