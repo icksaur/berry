@@ -6,7 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/berry",
-            "args": ["-d"],
+            "args": ["-d", "-c", "${workspaceFolder}/examples/autostart"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [{"name": "DISPLAY", "value": ":2"}],

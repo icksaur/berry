@@ -696,7 +696,8 @@ static void handle_button_press(XEvent *e) {
         client_manage_focus(c);
     }
  
-    if (!bev->state) {
+    {
+        // check to see if we should focus this client
         int wx, wy;
         int extra_width = 0;
         int extra_height = 0;
@@ -954,10 +955,24 @@ handle_property_notify(XEvent *e)
     }
 }
 
-static void
-handle_configure_notify(XEvent *e)
-{
+static void handle_configure_notify(XEvent *e) {
     XConfigureEvent *ev = &e->xconfigure;
+    struct client *c = get_client_from_window(ev->window);
+    if (c != NULL) {
+        int cx = left_width(c);
+        int cy = top_height(c);
+        if (c->window == ev->window ) {
+            LOGP("configure for client %s from XSendEvent", ev->send_event ? "is" : "is NOT");
+            LOGP("configure for client override_redirect is %d", ev->override_redirect ? "True" : "False");
+            if (ev->x != cx || ev->y != cy) {
+                // Some clients attempt to move themselves within the frame.  Move them back.
+                unsigned int cw = c->geom.width - get_dec_width(c);
+                unsigned int ch = c->geom.height - get_dec_height(c);
+                LOGP("client moved in frame from %d,%d, moving to %d,%d w:%d h:%d", ev->x, ev->y, cx, cy, cw, ch);
+                XMoveResizeWindow(display, c->window, cx, cy, cw, ch);
+            }
+        }
+    }
 
     if (ev->window == root) {
         // handle display size changes by the root window
@@ -1676,6 +1691,7 @@ client_resize_absolute(struct client *c, int w, int h)
     if (c->mono)
         c->mono = false;
     client_set_status(c);
+    draw_text(c, f_client == c);
 }
 
 static void
@@ -1785,6 +1801,13 @@ client_set_title(struct client *c)
     XFree(tp.value);
 }
 
+static void grab_super_key(Display *display, int keycode, unsigned int modifiers, Window window) {
+    unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
+    for (int i = 0; i < sizeof(modmasks)/sizeof(modmasks[0]); i++) {
+        XGrabKey(display, keycode, modifiers | modmasks[i], window, True, GrabModeAsync, GrabModeAsync);
+    }
+}
+
 
 static void setup(void) {
     unsigned long data[1], data2[1];
@@ -1841,13 +1864,13 @@ static void setup(void) {
     XGrabKey(display, alt_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
 
     for (long unsigned int i = 0; i < num_launchers; i++) {
-        XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
-        XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus, True, GrabModeAsync, GrabModeAsync);
+        grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root);
+        grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus);
     }
 
     for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
-        XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
-        XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, nofocus, True, GrabModeAsync, GrabModeAsync);
+        grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), Mod4Mask, root);
+        grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), Mod4Mask, nofocus);
     }
 
     LOGN("selected root input");

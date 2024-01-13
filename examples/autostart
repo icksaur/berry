@@ -1,10 +1,10 @@
 #!/bin/bash
 
-feh --bg-fill ~/Sync/custom/moss.jpeg
+feh --bg-fill ~/Sync/custom/gradient.png
 #picom -b -c --backend glx --no-vsync --config ~/.config/picom.conf
-tint2 &
-fcitx5 -d
-volctl &
-dunst &
+#tint2 &
+#fcitx5 -d
+#volctl &
+#dunst &
 #steam &
 #discord &
