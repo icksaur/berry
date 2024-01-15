@@ -1182,6 +1182,13 @@ static void client_manage_focus(struct client *c) {
     }
 }
 
+static void grab_button_modifiers(Display *display, unsigned int button, unsigned int modifiers, Window window) {
+    unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
+    for (int i = 0; i < sizeof(modmasks)/sizeof(modmasks[0]); i++) {
+        XGrabButton(display, button, modifiers | modmasks[i], window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+    }
+}
+
 static void
 manage_new_window(Window w, XWindowAttributes *wa)
 {
@@ -1266,8 +1273,13 @@ manage_new_window(Window w, XWindowAttributes *wa)
     XSetWindowBorderWidth(display, c->window, 0);
 
     // intercept move mask clicks for managing the window, and single-click for focusing
-    XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
-    XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+    if (flight) {
+        grab_button_modifiers(display, AnyButton, MOVE_MASK, c->window);
+        grab_button_modifiers(display, AnyButton, 0, c->window);
+    } else {
+        XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+        XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
+    }
 
     if (conf.decorate) {
         if (hasClassHint) {
@@ -1785,6 +1797,12 @@ client_set_title(struct client *c)
     XFree(tp.value);
 }
 
+static void grab_super_key(Display *display, int keycode, unsigned int modifiers, Window window) {
+    unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
+    for (int i = 0; i < sizeof(modmasks)/sizeof(modmasks[0]); i++) {
+        XGrabKey(display, keycode, modifiers | modmasks[i], window, True, GrabModeAsync, GrabModeAsync);
+    }
+}
 
 static void setup(void) {
     unsigned long data[1], data2[1];
@@ -1841,13 +1859,13 @@ static void setup(void) {
     XGrabKey(display, alt_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
 
     for (long unsigned int i = 0; i < num_launchers; i++) {
-        XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
-        XGrabKey(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus, True, GrabModeAsync, GrabModeAsync);
+        grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root);
+        grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus);
     }
 
     for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
-        XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
-        XGrabKey(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), AnyModifier, nofocus, True, GrabModeAsync, GrabModeAsync);
+        grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, root);
+        grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, nofocus);
     }
 
     LOGN("selected root input");
