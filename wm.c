@@ -696,8 +696,8 @@ static void handle_button_press(XEvent *e) {
         client_manage_focus(c);
     }
  
-    {
-        // check to see if we should focus this client
+    if (!(bev->state & Mod4Mask)) {
+        // check to see if we should pass input to this client
         int wx, wy;
         int extra_width = 0;
         int extra_height = 0;
@@ -724,7 +724,7 @@ static void handle_button_press(XEvent *e) {
     ocw = c->geom.width;
     och = c->geom.height;
     last_motion = ev.xmotion.time;
-    bool dragged = false;
+    bool ignore_buttonup = false;
     bool lowerClick = false;
     if (y > ocy + och - conf.b_width - conf.i_width - conf.bottom_height) {
         lowerClick = true;
@@ -736,7 +736,7 @@ static void handle_button_press(XEvent *e) {
         XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask|FocusChangeMask, &ev);
         switch (ev.type) {
             case ButtonRelease:
-                if (dragged)
+                if (ignore_buttonup)
                     break;
                 LOGP("button released: %d", ev.xbutton.button);
                 switch (ev.xbutton.button) {
@@ -774,20 +774,23 @@ static void handle_button_press(XEvent *e) {
                 }
                 last_motion = current_time;
                 state       = mod_clean(ev.xbutton.state);
-                if (lowerClick || (state == (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
+                if (lowerClick || (state & (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
+                    // super right drag or bottom-border drag: resize window
                     nw = ev.xmotion.x - x;
                     nh = ev.xmotion.y - y;
                     client_resize_absolute(c, ocw + nw, och + nh);
-                    dragged = true;
+                    ignore_buttonup = true;
                 }
-                else if ((state == (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || bev->button == (unsigned)conf.move_button) {
+                else if ((state & (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || bev->button == (unsigned)conf.move_button) {
+                    // super left drag: move window
                     nx = ocx + (ev.xmotion.x - x);
                     ny = ocy + (ev.xmotion.y - y);
                     if (c->mono) {
+                        // moving a maximized window restores previous size
                         client_resize_absolute(c, c->prev.width, c->prev.height);
                     }
                     client_move_absolute(c, nx, ny);
-                    dragged = true;
+                    ignore_buttonup = true;
                 }
                 // XFlush(display); // not needed?
                 break;
