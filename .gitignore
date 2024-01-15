@@ -1,4 +1,5 @@
 berry
+*.orig
 .o
 config.status
 Config.mk

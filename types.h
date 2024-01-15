@@ -73,7 +73,8 @@ enum atoms_net {
     NetWMMoveResize,
     NetDesktopNames,
     NetDesktopViewport,
-
+    NetWMStrut,
+    NetWMStrutPartial,
     NetLast
 };
 

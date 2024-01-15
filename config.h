@@ -33,7 +33,7 @@
 #define RESIZE_STEP 40
 #define PLACE_RES 10
 
-#define TOP_GAP 36
+#define TOP_GAP 0
 #define BOT_GAP 0
 
 #define BORDER_UNFOCUS_COLOR 0x604040
