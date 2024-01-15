@@ -2,7 +2,7 @@
 
 feh --bg-fill ~/Sync/custom/gradient.png
 #picom -b -c --backend glx --no-vsync --config ~/.config/picom.conf
-#tint2 &
+tint2 &
 #fcitx5 -d
 #volctl &
 #dunst &

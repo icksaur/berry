@@ -151,7 +151,7 @@ static int top_height(struct client *c);
 static void feature_toggle(void);
 
 static Bool window_is_undecorated(Window window);
-
+static void window_find_struts(void);
 typedef void (*x11_event_handler_t)(XEvent *e);
 
 /* Native X11 Event handler */
@@ -1068,9 +1068,7 @@ handle_reparent_notify(XEvent *e) {
     LOGP("e: reparent %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
 }
 
-static void
-handle_unmap_notify(XEvent *e)
-{
+static void handle_unmap_notify(XEvent *e) {
     XUnmapEvent *ev = &e->xunmap;
     struct client *c = get_client_from_window(ev->window);
     LOGP("e: unmap %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
@@ -1086,6 +1084,8 @@ handle_unmap_notify(XEvent *e)
         } else {
             LOGN("Client not found while deleting and ws is non-empty, doing nothing");
         }
+
+        window_find_struts();
         return;
     }
 
@@ -1235,6 +1235,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
                 XMapWindow(display, w);
                 LOGN("Window is of type dock, toolbar, utility, menu, or splash: not managing");
                 LOGN("Mapping new window, not managed");
+                window_find_struts();
                 return;
             }
         }
@@ -1926,13 +1927,15 @@ static void setup(void) {
     net_atom[NetWMFrameExtents]             = XInternAtom(display, "_NET_FRAME_EXTENTS", False);
     net_atom[NetDesktopNames]               = XInternAtom(display, "_NET_DESKTOP_NAMES", False);
     net_atom[NetDesktopViewport]            = XInternAtom(display, "_NET_DESKTOP_VIEWPORT", False);
+    net_atom[NetWMStrut]                    = XInternAtom(display, "_NET_WM_STRUT", False);
+    net_atom[NetWMStrutPartial]             = XInternAtom(display, "_NET_WM_STRUT_PARTIAL", False);
 
     /* Some icccm atoms */
     wm_atom[WMDeleteWindow]          = XInternAtom(display, "WM_DELETE_WINDOW", False);
     wm_atom[WMTakeFocus]             = XInternAtom(display, "WM_TAKE_FOCUS", False);
     wm_atom[WMProtocols]             = XInternAtom(display, "WM_PROTOCOLS", False);
     wm_atom[WMChangeState]           = XInternAtom(display, "WM_CHANGE_STATE", False);
-    wm_atom[WMMotifHints]           = XInternAtom(display, "_MOTIF_WM_HINTS", False);
+    wm_atom[WMMotifHints]            = XInternAtom(display, "_MOTIF_WM_HINTS", False);
 
     /* Internal berry atoms */
     net_berry[BerryWindowStatus]     = XInternAtom(display, "BERRY_WINDOW_STATUS", False);
@@ -2201,6 +2204,52 @@ static Bool window_is_undecorated(Window window) {
     }
 
     return False;
+}
+
+#define REMOVE_EQ(X, Y) X = (X == Y ? 0 : X)
+
+// find all windows that advertise WM_STRUTS and calculate the largest border gaps
+static void window_find_struts() {
+    Window *children, root_return, parent_return;
+    unsigned int child_count, actual_format;
+    unsigned long nitems, bytes_after;
+    Atom actual_type;
+    if (False == XQueryTree(display, root, &root_return, &parent_return, &children, &child_count)) {
+        LOGN("Failed to query tree to find struts");
+        return;
+    }
+
+    unsigned int max_struts[4] = {0, 0, 0, 0};
+
+    for (unsigned int i = 0; i < child_count; i++) {
+        unsigned long *struts = NULL;
+        Window window = children[i];
+        // try to get _NET_WM_STRUT_PARTIAL first, otherwise _NET_WM_STRUT according to spec
+        if (XGetWindowProperty(display, window, net_atom[NetWMStrutPartial], 0, 12,
+                                False, AnyPropertyType, &actual_type, &actual_format,
+                                &nitems, &bytes_after, (unsigned long *)&struts) != Success) {
+            XGetWindowProperty(display, window, net_atom[NetWMStrut], 0, 4,
+                                False, AnyPropertyType, &actual_type, &actual_format,
+                                &nitems, &bytes_after, (unsigned long *)&struts);
+        }
+
+        if (struts && actual_type == XA_CARDINAL && actual_format == 32 && nitems >= 4) {
+            max_struts[0] = MAX(max_struts[0], struts[0]);
+            max_struts[1] = MAX(max_struts[1], struts[1]);
+            max_struts[2] = MAX(max_struts[2], struts[2]);
+            max_struts[3] = MAX(max_struts[3], struts[3]);
+        }
+
+        if (struts)
+            XFree(struts);
+    }
+
+    XFree(children);
+
+    conf.left_gap = max_struts[0];
+    conf.right_gap = max_struts[1];
+    conf.top_gap = max_struts[2];
+    conf.bot_gap = max_struts[3];
 }
 
 /*

@@ -12,7 +12,11 @@
         "utility": "c",
         "bitset": "c",
         "set": "c",
-        "format": "c"
+        "format": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c",
+        "span": "c"
     },
     "editor.formatOnType": true,
     "[lisp]": {
