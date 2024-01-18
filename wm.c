@@ -319,19 +319,17 @@ static void client_close(struct client *c) {
 // create decoration window 
 static void client_decorations_create(struct client *c)
 {
-    int w = c->geom.width + 2 * conf.i_width;
-    int h = c->geom.height + 2 * conf.i_width + conf.t_height + conf.bottom_height;
-    int x = c->geom.x - conf.i_width - conf.b_width;
-    int y = c->geom.y - conf.i_width - conf.b_width - conf.t_height;
+    int w = c->geom.width + get_dec_width(c);
+    int h = c->geom.height + get_dec_height(c);
+    int x = c->geom.x - left_width(c);
+    int y = c->geom.y - top_height(c);
 
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
     c->decorated = true;
 
-    int xchild = left_width(c);
-    int ychild = top_height(c);
-    XReparentWindow(display, c->window, dec, xchild, ychild);
+    XReparentWindow(display, c->window, dec, left_width(c), top_height(c));
     LOGP("%x (decoration) parented to %x (client)", dec, c->window);
 
     c->dec = dec;
@@ -342,17 +340,9 @@ static void client_decorations_create(struct client *c)
 }
 
 /* Create new "dummy" windows to be used as decorations for the given client */
-static void
-client_decorations_show(struct client *c)
-{
-    int borderSize = conf.b_width + conf.i_width;
-    int w = c->geom.width - borderSize;
-    int h = c->geom.height - borderSize - conf.t_height - conf.bottom_height;
-    int x = conf.i_width + conf.b_width;
-    int y = x + conf.t_height;
-
-    XMoveResizeWindow(display, c->window, x, y, w, h);
+static void client_decorations_show(struct client *c) {
     c->decorated = true;
+    XMoveResizeWindow(display, c->window, left_width(c), top_height(c), get_actual_width(c), get_actual_height(c));
 
     draw_text(c, true);
     ewmh_set_frame_extents(c);
@@ -981,10 +971,10 @@ static void handle_configure_notify(XEvent *e) {
             LOGP("configure for client override_redirect is %d", ev->override_redirect ? "True" : "False");
             if (ev->x != cx || ev->y != cy) {
                 // Some clients attempt to move themselves within the frame.  Move them back.
-                unsigned int cw = c->geom.width - get_dec_width(c);
-                unsigned int ch = c->geom.height - get_dec_height(c);
+                unsigned int cw = c->geom.width;
+                unsigned int ch = c->geom.height;
                 LOGP("client moved in frame from %d,%d, moving to %d,%d w:%d h:%d", ev->x, ev->y, cx, cy, cw, ch);
-                XMoveResizeWindow(display, c->window, cx, cy, cw, ch);
+                XMoveResizeWindow(display, c->window, cx, cy, c->geom.width, c->geom.height);
             }
         }
     }
@@ -1292,6 +1282,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
         return;
     }
     c->window = w;
+    c->class_hint = hasClassHint;
     c->ws = curr_ws;
     c->geom.x = wa->x;
     c->geom.y = wa->y;
@@ -1314,7 +1305,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
     }
 
     if (conf.decorate) {
-        if (hasClassHint) {
+        if (c->class_hint) {
             LOGN("Decorating window");
             client_decorations_create(c);
         } else {
@@ -1402,7 +1393,7 @@ ungrab_buttons(void)
 static void
 client_move_absolute(struct client *c, int x, int y)
 {
-    XMoveWindow(display, c->dec, x, y);
+    XMoveWindow(display, c->dec, x - left_width(c), y - top_height(c));
 
     c->geom.x = x;
     c->geom.y = y;
@@ -1424,10 +1415,10 @@ client_notify_move(struct client * c) {
     cev.window = c->window;
     cev.event = c->window;
     cev.display = display;
-    cev.x = c->geom.x + (c->decorated ? (conf.b_width + conf.i_width) : 0);
-    cev.y = c->geom.y + (c->decorated ? (conf.b_width + conf.i_width + conf.t_height) : 0);
-    cev.width = c->geom.width - (c->decorated ? (conf.b_width + conf.i_width) : 0);
-    cev.height = c->geom.height - (c->decorated ? (conf.b_width + conf.i_width + conf.t_height + conf.bottom_height) : 0);
+    cev.x = c->geom.x;
+    cev.y = c->geom.y;
+    cev.width = c->geom.width;
+    cev.height = c->geom.height;
     cev.override_redirect = False;
     cev.border_width = 0;
     cev.above = None;
@@ -1659,19 +1650,13 @@ refresh_config(void)
 {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
-            /* We run into this annoying issue when where we have to
-             * re-create these windows since the border_width has changed.
-             * We end up destroying and recreating this windows, but this
-             * causes them to be redrawn on the wrong screen, regardless of
-             * their current desktop. The easiest way around this is to move
-             * them all to the current desktop and then back agian */
-            if (tmp->decorated && conf.decorate) {
-                client_decorations_destroy(tmp);
-                client_decorations_show(tmp);
-                XMapWindow(display, tmp->dec);
+            if (conf.decorate) {
+                XWindowChanges wc;
+                wc.border_width = conf.b_width;
+                XConfigureWindow(display, tmp->dec, CWBorderWidth, &wc);
             }
 
-            // client_refresh(tmp);
+            client_refresh(tmp);
             client_show(tmp);
 
             if (f_client != tmp)
@@ -1689,33 +1674,19 @@ refresh_config(void)
     }
 }
 
-static void
-client_resize_absolute(struct client *c, int w, int h)
-{
-    int dw = w;
-    int dh = h;
-    int dec_w = w;
-    int dec_h = h;
-
+static void client_resize_absolute(struct client *c, int w, int h) {
     XSizeHints hints;
     XGetNormalHints(display, c->window, &hints);
-    w = MAX(hints.min_width, w);
-    h = MAX(hints.min_height, h);
+    c->geom.width = w = MAX(hints.min_width, w);
+    c->geom.height = h = MAX(hints.min_height, h);
 
-    if (c->decorated) {
-        dw = w - (2 * conf.i_width) - (2 * conf.b_width);
-        dh = h - (2 * conf.i_width) - (2 * conf.b_width) - conf.t_height - conf.bottom_height;
-
-        dec_w = w;
-        dec_h = h;
-    }
+    int dec_w = get_actual_width(c);
+    int dec_h = get_actual_height(c);
 
     /*LOGN("Resizing client main window");*/
-    XResizeWindow(display, c->window, MAX(dw, MINIMUM_DIM), MAX(dh, MINIMUM_DIM));
+    XResizeWindow(display, c->window, MAX(w, MINIMUM_DIM), MAX(h, MINIMUM_DIM));
     XResizeWindow(display, c->dec, MAX(dec_w, MINIMUM_DIM), MAX(dec_h, MINIMUM_DIM));
 
-    c->geom.width = MAX(w, MINIMUM_DIM);
-    c->geom.height = MAX(h, MINIMUM_DIM);
     if (c->mono)
         c->mono = false;
     draw_text(c, f_client == c);
@@ -2284,41 +2255,27 @@ int get_actual_y(struct client *c) {
 }
 
 int get_actual_width(struct client *c) {
-    int dec_width = get_dec_width(c);
-    return c->geom.width + dec_width;
+    return c->geom.width + get_dec_width(c);
 }
 
-int
-get_actual_height(struct client *c) {
-    int dec_height = get_dec_height(c);
-    return c->geom.height + dec_height;
+int get_actual_height(struct client *c) {
+    return c->geom.height + get_dec_height(c);
 }
 
 int get_dec_width(struct client *c) {
-    int b_width = c->decorated ? conf.b_width : 0;
-    int i_width = c->decorated ? conf.i_width : 0;
-    return 2 * (b_width + i_width);
+    return c->decorated ? (2 * conf.i_width) : 0;
 }
 
 int get_dec_height(struct client *c) {
-    int t_height = c->decorated ? conf.t_height : 0;
-    int b_width = c->decorated ? conf.b_width : 0;
-    int i_width = c->decorated ? conf.i_width : 0;
-    int b_height = c->decorated ? conf.bottom_height : 0;
-    return 2 * (b_width + i_width) + t_height + b_height;
+    return c->decorated ? (2 * conf.i_width + conf.t_height + conf.bottom_height) : 0;
 }
 
 int left_width(struct client *c) {
-    int b_width = c->decorated ? conf.b_width : 0;
-    int i_width = c->decorated ? conf.i_width : 0;
-    return  b_width + i_width;
+    return c->decorated ? conf.i_width : 0;
 }
 
 int top_height(struct client *c) {
-    int t_height = c->decorated ? conf.t_height : 0;
-    int b_width = c->decorated ? conf.b_width : 0;
-    int i_width = c->decorated ? conf.i_width : 0;
-    return t_height + b_width + i_width;
+    return c->decorated ? (conf.t_height + conf.i_width) : 0;
 }
 
 static void feature_toggle() {
