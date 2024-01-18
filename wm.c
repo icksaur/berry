@@ -1127,7 +1127,7 @@ static void client_hide(struct client *c) {
     if (!c->hidden) {
         c->x_hide = c->geom.x;
         LOGN("Hiding client");
-        client_move_absolute(c, display_width + conf.b_width, c->geom.y);
+        client_move_absolute(c, display_width + 100, c->geom.y);
         c->hidden = true;
     }
 
@@ -1461,11 +1461,8 @@ client_monocle(struct client *c)
         ev.xclient.data.l[0] = _NET_WM_STATE_REMOVE;
         c->mono = false;
     } else {
-        c->prev.x = c->geom.x;
-        c->prev.y = c->geom.y;
-        c->prev.width = c->geom.width;
-        c->prev.height = c->geom.height;
-        client_move_absolute(c, m_list[mon].x + conf.left_gap, m_list[mon].y + conf.top_gap);
+        c->prev = c->geom;
+        client_move_absolute(c, m_list[mon].x + left_width(c) + conf.left_gap, m_list[mon].y + top_height(c) + conf.top_gap);
         client_resize_absolute(c, m_list[mon].width - conf.right_gap - conf.left_gap, m_list[mon].height - conf.top_gap - conf.bot_gap);
         ev.xclient.data.l[0] = _NET_WM_STATE_ADD;
         c->mono = true;
@@ -1646,13 +1643,13 @@ refresh_config(void)
                 XConfigureWindow(display, tmp->dec, CWBorderWidth, &wc);
             }
 
-            client_refresh(tmp);
-            client_show(tmp);
-
             if (f_client != tmp)
                 client_set_color(tmp, conf.iu_color, conf.bu_color);
             else
                 client_set_color(tmp, conf.if_color, conf.bf_color);
+
+            client_refresh(tmp);
+            client_show(tmp);
 
             if (i != curr_ws) {
                 client_hide(tmp);
