@@ -701,16 +701,9 @@ static void handle_button_press(XEvent *e) {
     if (!(bev->state & Mod4Mask)) { // if it's not a super mod combo
         // check to see if we should pass input to this client
         int wx, wy;
-        int extra_width = 0;
-        int extra_height = 0;
         XQueryPointer(display, c->window, &root_return, &child_return, &x, &y, &wx, &wy, &dui);
 
-        if (c->decorated) {
-            extra_width = conf.b_width + conf.i_width;
-            extra_height = conf.b_width + conf.i_width + conf.bottom_height + conf.t_height;
-        }
-
-        if (wx > 0 && wy > 0 && wx < (c->geom.width - extra_width) && wy < (c->geom.height - extra_height)) {
+        if (wx > 0 && wy > 0 && wx < c->geom.width && wy < c->geom.height) {
             LOGN("click with no modifiers seems to be in client area");
             bev->window = c->window;
             XAllowEvents(display, ReplayPointer, CurrentTime);
@@ -727,10 +720,7 @@ static void handle_button_press(XEvent *e) {
     och = c->geom.height;
     last_motion = ev.xmotion.time;
     bool ignore_buttonup = false;
-    bool lowerClick = false;
-    if (y > ocy + och - conf.b_width - conf.i_width - conf.bottom_height) {
-        lowerClick = true;
-    }
+    bool lower_click = y > ocy + och;
     if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess) {
         return;
     }
@@ -776,7 +766,7 @@ static void handle_button_press(XEvent *e) {
                 }
                 last_motion = current_time;
                 state       = mod_clean(ev.xbutton.state);
-                if (lowerClick || (state & (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
+                if (lower_click || (state & (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
                     // super right drag or bottom-border drag: resize window
                     nw = ev.xmotion.x - x;
                     nh = ev.xmotion.y - y;
