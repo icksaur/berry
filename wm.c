@@ -1463,7 +1463,7 @@ client_monocle(struct client *c)
     } else {
         c->prev = c->geom;
         client_move_absolute(c, m_list[mon].x + left_width(c) + conf.left_gap, m_list[mon].y + top_height(c) + conf.top_gap);
-        client_resize_absolute(c, m_list[mon].width - conf.right_gap - conf.left_gap, m_list[mon].height - conf.top_gap - conf.bot_gap);
+        client_resize_absolute(c, m_list[mon].width - conf.right_gap - conf.left_gap - get_dec_width(c), m_list[mon].height - conf.top_gap - conf.bot_gap - get_dec_height(c));
         ev.xclient.data.l[0] = _NET_WM_STATE_ADD;
         c->mono = true;
     }
