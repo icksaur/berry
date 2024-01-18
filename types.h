@@ -32,8 +32,8 @@ struct client {
 };
 
 struct config {
-    int b_width, i_width, t_height, bottom_height, top_gap, bot_gap, left_gap, right_gap, r_step, m_step, move_button, move_mask, resize_button, resize_mask, pointer_interval;
-    unsigned long bf_color, bu_color, if_color, iu_color;
+    unsigned int b_width, i_width, t_height, bottom_height, top_gap, bot_gap, left_gap, right_gap, r_step, m_step, move_button, move_mask, resize_button, resize_mask, pointer_interval;
+    unsigned int bf_color, bu_color, if_color, iu_color;
     bool focus_new, focus_motion, t_center, smart_place, draw_text, decorate, fs_remove_dec, fs_max;
     bool follow_pointer, warp_pointer;
     bool manage[WindowLast];
@@ -88,8 +88,7 @@ enum atoms_wm {
 };
 
 enum berry_net {
-    BerryWindowStatus,
-    BerryClientEvent,
+    BerryWindowConfig,
     BerryFontProperty,
     BerryLast
 };

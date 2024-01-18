@@ -88,7 +88,6 @@ static void client_show(struct client *c);
 static void client_snap_left(struct client *c);
 static void client_snap_right(struct client *c);
 static void client_toggle_decorations(struct client *c);
-static void client_set_status(struct client *c);
 static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y);
 static void client_update_state(struct client *c);
 static void client_add_state(struct client *c, int wm_state);
@@ -135,6 +134,7 @@ static void ungrab_buttons(void);
 static void refresh_config(void);
 static bool safe_to_focus(int ws);
 static void setup(void);
+static Bool check_running(void);
 static void switch_ws(int ws);
 static void warp_pointer(struct client *c);
 static void usage(void);
@@ -149,6 +149,8 @@ static int get_dec_height(struct client *c);
 static int left_width(struct client *c);
 static int top_height(struct client *c);
 static void feature_toggle(void);
+static void send_config(const char *key, const char *value);
+static void update_config(unsigned int offset, unsigned int value);
 
 static Bool window_is_undecorated(Window window);
 static void window_find_struts(void);
@@ -170,6 +172,23 @@ static const x11_event_handler_t event_handler [LASTEvent] = {
     [Expose]           = handle_expose,
     [FocusIn]          = handle_focus,
     [EnterNotify]      = handle_enter_notify,
+};
+
+typedef struct  {
+    const char *key;
+    size_t offset;
+} config_setter;
+
+#define CONFIG_VALUE(X) { #X, offsetof(struct config, X) }
+static config_setter setters[] = {
+    CONFIG_VALUE(bf_color),
+    CONFIG_VALUE(bu_color),
+    CONFIG_VALUE(if_color),
+    CONFIG_VALUE(iu_color),
+    CONFIG_VALUE(b_width),
+    CONFIG_VALUE(i_width ),
+    CONFIG_VALUE(t_height),
+    CONFIG_VALUE(bottom_height),
 };
 
 typedef struct {
@@ -308,8 +327,10 @@ static void client_decorations_create(struct client *c)
     Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
-    int xchild = conf.b_width + conf.i_width;
-    int ychild = xchild + conf.t_height;
+    c->decorated = true;
+
+    int xchild = left_width(c);
+    int ychild = top_height(c);
     XReparentWindow(display, c->window, dec, xchild, ychild);
     LOGP("%x (decoration) parented to %x (client)", dec, c->window);
 
@@ -318,7 +339,6 @@ static void client_decorations_create(struct client *c)
 
     draw_text(c, true);
     ewmh_set_frame_extents(c);
-    client_set_status(c);
 }
 
 /* Create new "dummy" windows to be used as decorations for the given client */
@@ -337,7 +357,6 @@ client_decorations_show(struct client *c)
     draw_text(c, true);
     ewmh_set_frame_extents(c);
     client_refresh(c); // reposition client within decoration
-    client_set_status(c);
 }
 
 /* Destroy any "dummy" windows associated with the given Client as decorations */
@@ -348,8 +367,6 @@ client_decorations_destroy(struct client *c)
     c->decorated = false;
     XMoveResizeWindow(display, c->window, 0, 0, c->geom.width, c->geom.height);     
     ewmh_set_frame_extents(c);
-
-    client_set_status(c);
 }
 
 /* Remove the given Client from the list of currently managed clients
@@ -456,20 +473,17 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
         c->was_fs = false;
         client_refresh(c);
     }
-
-    client_set_status(c);
 }
 
-/* Focus the next window in the list. Windows are sorted by the order in which they are
- * created (mapped to the window manager)
- */
-static void
-focus_next(struct client *c)
-{
+// focus the next window in the focus list
+static void focus_next(struct client *c) {
     int ws = c != NULL ? c->ws : curr_ws;
-
     if (c == NULL) {
         c = f_list[ws];
+    }
+
+    if (f_list[ws] == NULL) {
+        return;
     }
 
     if (f_list[ws] == c && f_list[ws]->f_next == NULL) {
@@ -483,15 +497,12 @@ focus_next(struct client *c)
 }
 
 /* Returns the struct client associated with the given struct Window */
-static struct client*
-get_client_from_window(Window w)
-{
+static struct client* get_client_from_window(Window w) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
             if (tmp->window == w)
                 return tmp;
-            //else if (tmp->decorated && tmp->dec == w)
-            else if (tmp->dec == w)
+            if (tmp->dec == w)
                 return tmp;
         }
     }
@@ -501,8 +512,7 @@ get_client_from_window(Window w)
 
 /* Redirect an XEvent from berry's client program, berryc */
 static void
-handle_client_message(XEvent *e)
-{
+handle_client_message(XEvent *e) {
     XClientMessageEvent *cme = &e->xclient;
     LOGP("e: message %d", cme->window);
     long cmd, *data;
@@ -581,6 +591,8 @@ handle_client_message(XEvent *e)
         } else {
             client_hide(c);
         }
+    } else if (cme->message_type == net_berry[BerryWindowConfig]) {
+        update_config(cme->data.l[0], cme->data.l[1]);
     }
 }
 
@@ -614,7 +626,7 @@ handle_key_press(XEvent *e) {
         if (!alt_tabbing) {
             alt_tabbing = true;
             if (f_client) {
-                f_last_client = f_client;
+                f_last_client = f_client; // prepare a focus item for LRU
             }
         }
         focus_next(f_client);
@@ -655,6 +667,7 @@ static void reorder_focus(void) {
     f_last_client = NULL;
 }
 
+// start a new process
 static void spawn(const char* file, const char * argv[]) {
     struct sigaction sa;
     if (fork() == 0) {
@@ -674,10 +687,8 @@ static void spawn(const char* file, const char * argv[]) {
     }
 }
 
+// handle mouse input; originally from DWM
 static void handle_button_press(XEvent *e) {
-    /* Much credit to the authors of dwm for
-     * this function.
-     */
     XButtonPressedEvent *bev = &e->xbutton;
     XEvent ev;
     struct client *c;
@@ -693,10 +704,11 @@ static void handle_button_press(XEvent *e) {
         return;
     if (c != f_client) {
         switch_ws(c->ws);
+        f_last_client = c; // prepare a focus item for LRU
         client_manage_focus(c);
     }
  
-    if (!(bev->state & Mod4Mask)) {
+    if (!(bev->state & Mod4Mask)) { // if it's not a super mod combo
         // check to see if we should pass input to this client
         int wx, wy;
         int extra_width = 0;
@@ -1131,9 +1143,7 @@ handle_enter_notify(XEvent *e)
 }
 
 /* Hides the given Client by moving it outside of the visible display */
-static void
-client_hide(struct client *c)
-{
+static void client_hide(struct client *c) {
     if (!c->hidden) {
         c->x_hide = c->geom.x;
         LOGN("Hiding client");
@@ -1142,11 +1152,12 @@ client_hide(struct client *c)
     }
 
     client_update_state(c);
-    client_manage_focus(NULL);
+    
+    // focusing the next window seems reasonable but need to make focus_next skip hidden windows in this case
+    // focus_next(c);
 }
 
-static void
-load_color(XftColor *dest_color, unsigned long raw_color) {
+static void load_color(XftColor *dest_color, unsigned long raw_color) {
     XColor x_color;
     x_color.pixel = raw_color;
     XQueryColor(display, DefaultColormap(display, screen), &x_color);
@@ -1192,8 +1203,10 @@ static void client_manage_focus(struct client *c) {
 
         if (c->ws != curr_ws)
             switch_ws(c->ws);
-    } else { //client is null, might happen when switching to a new workspace
-             // without any active clients
+
+        reorder_focus();
+    } else { // client is null, might happen when switching to a new workspace
+      //  without any active clients
         LOGN("Giving focus to dummy window");
         f_client = NULL;
         XSetInputFocus(display, nofocus, RevertToPointerRoot, CurrentTime);
@@ -1360,7 +1373,7 @@ manage_xsend_icccm(struct client *c, Atom atom)
         ev.xclient.format = 32;
         ev.xclient.data.l[0] = atom;
         ev.xclient.data.l[1] = CurrentTime;
-        XSendEvent(display, c->window, False, NoEventMask, &ev);
+        XSendEvent(display, c->window, True, NoEventMask, &ev);
     }
 
     return exists;
@@ -1398,7 +1411,6 @@ client_move_absolute(struct client *c, int x, int y)
         c->mono = false;
     }
 
-    client_set_status(c);
     client_notify_move(c);
 }
 
@@ -1694,8 +1706,8 @@ client_resize_absolute(struct client *c, int w, int h)
         dw = w - (2 * conf.i_width) - (2 * conf.b_width);
         dh = h - (2 * conf.i_width) - (2 * conf.b_width) - conf.t_height - conf.bottom_height;
 
-        dec_w = w - (2 * conf.b_width);
-        dec_h = h - (2 * conf.b_width);
+        dec_w = w;
+        dec_h = h;
     }
 
     /*LOGN("Resizing client main window");*/
@@ -1706,7 +1718,6 @@ client_resize_absolute(struct client *c, int w, int h)
     c->geom.height = MAX(h, MINIMUM_DIM);
     if (c->mono)
         c->mono = false;
-    client_set_status(c);
     draw_text(c, f_client == c);
 }
 
@@ -1824,7 +1835,6 @@ static void grab_super_key(Display *display, int keycode, unsigned int modifiers
     }
 }
 
-
 static void setup(void) {
     unsigned long data[1], data2[1];
     int mon;
@@ -1938,9 +1948,7 @@ static void setup(void) {
     wm_atom[WMMotifHints]            = XInternAtom(display, "_MOTIF_WM_HINTS", False);
 
     /* Internal berry atoms */
-    net_berry[BerryWindowStatus]     = XInternAtom(display, "BERRY_WINDOW_STATUS", False);
-    net_berry[BerryClientEvent]      = XInternAtom(display, "BERRY_CLIENT_EVENT", False);
-    net_berry[BerryFontProperty]     = XInternAtom(display, "BERRY_FONT_PROPERTY", False);
+    net_berry[BerryWindowConfig]     = XInternAtom(display, "BERRY_WINDOW_CONFIG", False);
 
     LOGN("Successfully assigned atoms");
 
@@ -2069,62 +2077,6 @@ client_toggle_decorations(struct client *c)
     }
 }
 
-/*
- * Credit to tudurom and windowchef
- * as inspiration for this functionality
- */
-static void client_set_status(struct client *c) {
-    return;
-
-    if (c == NULL)
-        return;
-    int size = 0;
-    int mon = 0;
-    char *str = NULL;
-    char *state, *decorated;
-
-    // LOGN("Updating client status...");
-
-    if (c->fullscreen)
-        state = "fullscreen";
-    else if (c->mono)
-        state = "mono";
-    else if (c->hidden)
-        state = "hidden";
-    else
-        state = "normal";
-
-    if (c->decorated)
-        decorated = "true";
-    else
-        decorated = "false";
-
-    size = asprintf(&str,
-            "0x%08x, " // window id
-            "%d, " // x
-            "%d, " // y
-            "%d, " // width
-            "%d, " // height
-            "%s, " // state
-            "%s, " // decorated
-            "%d, " // monitor id
-            "%d, " // monitor x
-            "%d, " // monitor y
-            "%d, " // monitor width
-            "%d",  // monitor height
-            (unsigned int)c->window, c->geom.x, c->geom.y, c->geom.width, c->geom.height, state, decorated,
-            mon, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height);
-
-    if (size == -1) {
-        LOGN("asprintf returned -1, could not report window status");
-        return;
-    }
-
-    XChangeProperty(display, c->window, net_berry[BerryWindowStatus], utf8string, 8, PropModeReplace,
-            (unsigned char *) str, strlen(str));
-    free(str);
-}
-
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen) {
     XChangeProperty(display, c->window, net_atom[NetWMState], XA_ATOM, 32,
             PropModeReplace, (unsigned char *)&net_atom[NetWMStateFullscreen], fullscreen ? 1 : 0 );
@@ -2138,7 +2090,6 @@ static void ewmh_set_viewport(void) {
 static void ewmh_set_focus(struct client *c) {
         XDeleteProperty(display, root, net_atom[NetActiveWindow]);
         f_client = c;
-        reorder_focus();
         /* Tell EWMH about our new window */
         XChangeProperty(display, root, net_atom[NetActiveWindow], XA_WINDOW, 32, PropModeReplace, (unsigned char *) &(c->window), 1);
 }
@@ -2374,6 +2325,101 @@ static void feature_toggle() {
     flight = !flight;
 }
 
+static Bool check_running() {
+    Window check_root = DefaultRootWindow(display);
+    if (!check_root) {
+        return False;
+    }
+
+    unsigned char *prop_return = NULL;
+    Window *child_return = NULL;
+    Atom actual_type;
+    int actual_format;
+    unsigned long nitems;
+    unsigned long bytes_after;
+    Window check_child = NULL;
+    Atom prop = XInternAtom(display, "_NET_WM_NAME", False);
+    Atom type = XInternAtom(display, "UTF8_STRING", False);
+    Atom check_atom = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
+
+    if (Success != XGetWindowProperty(display, check_root, check_atom, 0, (~0L), False, XA_WINDOW, &actual_type,
+                            &actual_format, &nitems, &bytes_after, &prop_return)) {
+        return False;
+    }
+
+    if (actual_type == XA_WINDOW) {
+        check_child = *(Window*)prop_return;
+    }
+
+    XFree(prop_return);
+
+    if (!check_child) {
+        return false;
+    }
+
+    Bool result = False;
+    if (Success == XGetWindowProperty(display, check_child, prop, 0, (~0L), False, type, &actual_type,
+                            &actual_format, &nitems, &bytes_after, &prop_return))  {
+        if (actual_type == type && 0 == strcmp(__WINDOW_MANAGER_NAME__, (char*)prop_return)) {
+            result = True;
+        }
+
+        XFree(prop_return);
+    }
+
+    return result;
+}
+
+static void send_config(const char *key, const char *value) {
+    for (int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
+        if (0 == strcmp(key, setters[i].key)) {
+            char *endptr;
+            unsigned int ui_value = strtoul(value, &endptr, 16);
+            if (endptr == '\0') {
+                printf("could not parse %s as an unsigned integer\n", value);
+                return;
+            }
+
+            Window local_root = DefaultRootWindow(display);
+            printf("send %s = 0x%x to window 0x%x\n", key, ui_value, local_root);
+
+            XClientMessageEvent cev;
+            memset(&cev, 0, sizeof(XClientMessageEvent));
+            cev.send_event = True;
+            cev.display = display;
+            cev.serial = 0;
+            cev.type = ClientMessage;
+            cev.window = local_root;
+            cev.message_type = XInternAtom(display, "BERRY_WINDOW_CONFIG", False);
+            cev.data.l[0] = setters[i].offset;
+            cev.data.l[1] = ui_value;
+            cev.format = 32;
+            if (XSendEvent(display, local_root, False, SubstructureRedirectMask, &cev)) {
+                printf("sent message to window 0x%x\n", local_root);
+            } else {
+                printf("failed to send message to window 0x%x\n", local_root);
+            }
+            return;
+        }
+    }
+
+    printf("no config found for key %s\n");
+}
+
+static void update_config(unsigned int offset, unsigned int value) {
+    for (int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
+        if (setters[i].offset == offset) {
+            LOGP("setting %s to %u (0x%x)", setters[i].key, value, value);
+            unsigned int * setting = (unsigned int*)((char*)&conf + setters[i].offset);
+            *setting = value;
+            refresh_config();
+            return;
+        }
+    }
+
+    LOGP("no setter for offset 0x%x", offset);
+}
+
 int main(int argc, char *argv[]) {
     int opt;
     char *conf_path = malloc(MAXLEN * sizeof(char));
@@ -2402,6 +2448,23 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    display = XOpenDisplay(NULL);
+
+    if (!display)
+        exit(EXIT_FAILURE);
+
+    if (check_running()) {
+        printf("berry is running; sending config\n");
+        if (argc < 3)  {
+            printf("berry <setting> <value>\n");
+            exit(EXIT_FAILURE);
+        }
+
+        send_config(argv[1], argv[2]);
+        XCloseDisplay(display);
+        exit(EXIT_SUCCESS);
+    }
+
     if (conf_path[0] == '\0') {
         char *xdg_home = getenv("XDG_CONFIG_HOME");
         if (xdg_home != NULL) {
@@ -2423,10 +2486,6 @@ int main(int argc, char *argv[]) {
         LOGP("font specified, loading... %s", font_name);
         strncpy(global_font, font_name, sizeof(global_font));
     }
-
-    display = XOpenDisplay(NULL);
-    if (!display)
-        exit(EXIT_FAILURE);
 
     alt_keycode = XKeysymToKeycode(display, XK_Alt_L);
     tab_keycode = XKeysymToKeycode(display, XK_Tab);
@@ -2454,8 +2513,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    XDeleteProperty(display, root, net_berry[BerryWindowStatus]);
-    XDeleteProperty(display, root, net_berry[BerryFontProperty]);
     XDeleteProperty(display, root, net_atom[NetSupported]);
 
     LOGN("Closing display...");
