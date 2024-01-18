@@ -317,23 +317,16 @@ static void client_close(struct client *c) {
 }
 
 // create decoration window 
-static void client_decorations_create(struct client *c)
-{
+static void client_decorations_create(struct client *c) {
     int w = c->geom.width + get_dec_width(c);
     int h = c->geom.height + get_dec_height(c);
     int x = c->geom.x - left_width(c);
     int y = c->geom.y - top_height(c);
 
-    Window dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
+    c->dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
             conf.bu_color, conf.bf_color);
 
-    c->decorated = true;
-
-    XReparentWindow(display, c->window, dec, left_width(c), top_height(c));
-    LOGP("%x (decoration) parented to %x (client)", dec, c->window);
-
-    c->dec = dec;
-    c->decorated = true;
+    XReparentWindow(display, c->window, c->dec, left_width(c), top_height(c));
 
     draw_text(c, true);
     ewmh_set_frame_extents(c);
@@ -1200,9 +1193,7 @@ static void grab_button_modifiers(Display *display, unsigned int button, unsigne
     }
 }
 
-static void
-manage_new_window(Window w, XWindowAttributes *wa)
-{
+static void manage_new_window(Window w, XWindowAttributes *wa) {
     /* Credits to vain for XGWP checking */
     Atom prop, da;
     unsigned char *prop_ret = NULL;
@@ -1246,24 +1237,19 @@ manage_new_window(Window w, XWindowAttributes *wa)
 
     // Get class information for the current window
     XClassHint ch;
-    bool hasClassHint = false;
-    if (XGetClassHint(display, w, &ch) > Success)
-    {
+    bool has_class_hint = false;
+    if (XGetClassHint(display, w, &ch) > Success) {
         LOGP("client has class %s", ch.res_class);
         LOGP("client has name %s", ch.res_name);
         if (ch.res_class)
             XFree(ch.res_class);
         if (ch.res_name)
             XFree(ch.res_name);
-        hasClassHint = true;
-    }
-    else
-    {
+        has_class_hint = true;
+    } else {
         LOGN("could not retrieve client class hints. Not managing.");
         return;
     }
-
-    Bool is_decorated = !window_is_undecorated(w);
 
     struct client *c;
     c = malloc(sizeof(struct client));
@@ -1272,7 +1258,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
         return;
     }
     c->window = w;
-    c->class_hint = hasClassHint;
+    c->class_hint = has_class_hint;
     c->ws = curr_ws;
     c->geom.x = wa->x;
     c->geom.y = wa->y;
@@ -1282,6 +1268,7 @@ manage_new_window(Window w, XWindowAttributes *wa)
     c->fullscreen = false;
     c->mono = false;
     c->was_fs = false;
+    c->decorated = !window_is_undecorated(w);
 
     XSetWindowBorderWidth(display, c->window, 0);
 
@@ -1309,11 +1296,6 @@ manage_new_window(Window w, XWindowAttributes *wa)
     client_place(c);
     ewmh_set_desktop(c, c->ws);
     ewmh_set_client_list();
-
-    if (!is_decorated && c->dec) {
-        LOGN("Hiding decorations for window that doesn't want them");
-        client_toggle_decorations(c);
-    }
 
     // not sure we need this when parenting to decoration
     XMapWindow(display, c->window);
@@ -1471,106 +1453,9 @@ client_monocle(struct client *c)
     client_update_state(c);
 }
 
-static void
-client_place(struct client *c)
-{
-    int width, height, mon, count, max_height, t_gap, b_gap, l_gap, r_gap, x_off, y_off;
-
-    mon = ws_m_list[c->ws];
-    width = m_list[mon].width / PLACE_RES;
-    height = m_list[mon].height / PLACE_RES;
-    t_gap = conf.top_gap / PLACE_RES;
-    b_gap = conf.bot_gap / PLACE_RES;
-    l_gap = conf.left_gap / PLACE_RES;
-    r_gap = conf.right_gap / PLACE_RES;
-    x_off = m_list[mon].x / PLACE_RES;
-    y_off = m_list[mon].y / PLACE_RES;
-
-    // If this is the first window in the workspace, we can simply center
-    // it. Also center it if the user wants to disable smart placement.
-    if (f_list[curr_ws]->next == NULL || !conf.smart_place) {
-        client_center(c);
-        return;
-    }
-
-    uint16_t opt[height][width];
-
-    // Initialize array to all 1's
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            opt[i][j] = 1;
-        }
-    }
-
-    for (struct client *tmp = f_list[curr_ws]; tmp != NULL; tmp = tmp->next) {
-        if (tmp != c) {
-            struct client_geom *geom = &tmp->geom;
-            for (int i = geom->y / PLACE_RES;
-                 i < (geom->y / PLACE_RES) + (geom->height / PLACE_RES) && i < height + y_off;
-                 i++) {
-                for (int j = geom->x / PLACE_RES;
-                     j < (geom->x / PLACE_RES) + (geom->width / PLACE_RES) && j < width + x_off;
-                     j++) {
-                    opt[i-y_off][j-x_off] = 0;
-                }
-            }
-        }
-    }
-
-    /* NOTE: can we factor these for-loops.
-     *       something something spatial locality?...
-     */
-
-    for (int i = 0; i < t_gap; i++) { // top gap
-        for (int j = 0; j < width; j++) {
-            opt[i][j] = 0;
-        }
-    }
-
-    for (int i = height - b_gap; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            opt[i][j] = 0;
-        }
-    }
-
-    for (int i = 0; i < height; i++) {
-        for (int j = 0; j < l_gap; j++) {
-            opt[i][j] = 0;
-        }
-    }
-
-    for (int i = 0; i < height; i++) {
-        for (int j = width; j < width - r_gap; j++) {
-            opt[i][j] = 0;
-        }
-    }
-
-    // fill in the OPT matrix
-    for (int i = 1; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            opt[i][j] = opt[i][j] == 0 ? 0 : opt[i-1][j] + 1;
-        }
-    }
-
-    count = 0;
-    max_height = INT_MAX;
-    for (int i = height - b_gap - 1; i >= c->geom.height / PLACE_RES; i--) {
-        for (int j = l_gap; j < width - r_gap; j++) {
-            while (j < width && opt[i][j] >= c->geom.height / PLACE_RES) {
-                max_height = MIN(max_height, opt[i][j]);
-                count++;
-                j++;
-            }
-            // the window WILL fit here
-            if (count >= c->geom.width / PLACE_RES) {
-                int place_x = x_off * PLACE_RES + MAX(conf.left_gap, ceil10((j - count) * PLACE_RES + (count * PLACE_RES - c->geom.width) / 2));
-                int place_y = y_off * PLACE_RES + MAX(conf.top_gap, ceil10((i - max_height + 1) * PLACE_RES + (max_height * PLACE_RES - c->geom.height) / 2));
-                client_move_absolute(c, place_x, place_y);
-                return;
-            }
-            count = 0;
-        }
-    }
+static void client_place(struct client *c) {
+    client_center(c);
+    return;
 }
 
 static void
