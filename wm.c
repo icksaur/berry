@@ -430,12 +430,11 @@ client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
 {
     LOGP("fullscreen: toggle: %d fullscreen: %d, max: %d", toggle, fullscreen, max);
 
-    int mon;
-    bool to_fs;
-    mon = ws_m_list[c->ws];
-    UNUSED(max);
+    int mon = ws_m_list[c->ws];
+    bool to_fs = toggle ? !c->fullscreen : fullscreen;
 
-    to_fs = toggle ? !c->fullscreen : fullscreen;
+    if (to_fs == c->fullscreen)
+        return; // we're already in the desired state
 
     if (to_fs) {
         ewmh_set_fullscreen(c, true);
@@ -1283,6 +1282,7 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     c->mono = false;
     c->was_fs = false;
     c->decorated = !window_is_undecorated(w);
+    c->prev = c->geom; // just in case we get some odd fullscreen requests, we want this to be initialized to something reasonable
 
     XSetWindowBorderWidth(display, c->window, 0);
 
@@ -1568,11 +1568,13 @@ static void client_resize_absolute(struct client *c, int w, int h) {
     int dec_h = get_actual_height(c);
 
     /*LOGN("Resizing client main window");*/
+
     XResizeWindow(display, c->window, MAX(w, MINIMUM_DIM), MAX(h, MINIMUM_DIM));
     XResizeWindow(display, c->dec, MAX(dec_w, MINIMUM_DIM), MAX(dec_h, MINIMUM_DIM));
 
     if (c->mono)
         c->mono = false;
+
     draw_text(c, f_client == c);
 }
 
@@ -1913,7 +1915,6 @@ switch_ws(int ws)
     LOGP("Setting Screen #%d with active workspace %d", m_list[mon].screen, ws);
     client_manage_focus(c_list[curr_ws]);
     ewmh_set_active_desktop(ws);
-    XSync(display, True);
 }
 
 static void
