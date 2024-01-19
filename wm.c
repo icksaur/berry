@@ -236,24 +236,18 @@ typedef struct {
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
  */
-static void
-client_center(struct client *c)
-{
+static void client_center(struct client *c) {
     int mon;
     LOGN("Centering Client");
     mon = ws_m_list[c->ws];
     client_center_in_rect(c, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height);
 }
 
-static int
-ceil10 (int n)
-{
+static int ceil10 (int n) {
     return (n + 9) - (n + 9) % 10;
 }
 
-static void
-client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h)
-{
+static void client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h) {
     LOGP("Centering at x=%d, y=%d, w=%u, h=%u", x, y, w, h);
     int new_x = ceil10(x + (conf.left_gap - conf.right_gap) / 2 + w / 2 - c->geom.width / 2);
     int new_y = ceil10(y + (conf.top_gap - conf.bot_gap) / 2 + h / 2 - c->geom.height / 2);
@@ -407,9 +401,10 @@ static void client_delete(struct client *c) {
         f_client = next ? next : f_list;
         
     if (f_client) {
-        client_manage_focus(f_client);
         client_move_to_front(f_client);
     }
+
+    client_manage_focus(f_client);
 
     ewmh_set_client_list();
 }
@@ -1275,8 +1270,8 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     c->ws = curr_ws;
     c->geom.x = wa->x;
     c->geom.y = wa->y;
-    c->geom.width = wa->width + 2 * (conf.b_width + conf.i_width);
-    c->geom.height = wa->height + 2 * (conf.b_width + conf.i_width) + conf.t_height + conf.bottom_height;
+    c->geom.width = wa->width;
+    c->geom.height = wa->height;
     c->hidden = false;
     c->fullscreen = false;
     c->mono = false;
