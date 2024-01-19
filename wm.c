@@ -47,13 +47,16 @@ static int (*xerrorxlib)(Display *, XErrorEvent *);
 static XftColor xft_focus_color, xft_unfocus_color;
 static XftFont *font;
 static char global_font[MAXLEN] = DEFAULT_FONT;
-static XRenderColor r_color;
 static GC gc;
 static Atom utf8string;
 static Time last_release = 0; /* double-click detection */
 static int alt_tabbing = 0;
+static bool super_l_only_pressed = 0;
+static bool super_r_only_pressed = 0;
 static unsigned int alt_keycode;
 static unsigned int tab_keycode;
+static unsigned int super_l_keycode;
+static unsigned int super_r_keycode;
 static unsigned int flight = True;
 
 /* All functions */
@@ -66,6 +69,7 @@ static void client_decorations_create(struct client *cm);
 static void client_decorations_show(struct client *c);
 static void client_decorations_destroy(struct client *c);
 static void client_delete(struct client *c);
+static void client_toggle_fullscreen(struct client *c);
 static void client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max);
 static void client_hide(struct client *c);
 static void client_manage_focus(struct client *c);
@@ -90,7 +94,6 @@ static void client_snap_right(struct client *c);
 static void client_toggle_decorations(struct client *c);
 static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y);
 static void client_update_state(struct client *c);
-static void client_add_state(struct client *c, int wm_state);
 
 /* EWMH functions */
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen);
@@ -124,13 +127,10 @@ static void monitors_setup(void);
 static void reorder_focus(void);
 static void draw_text(struct client *c, bool focused);
 static struct client* get_client_from_window(Window w);
-static void load_color(XftColor *dest_color, unsigned long raw_color);
 static void load_config(char *conf_path);
 static void manage_new_window(Window w, XWindowAttributes *wa);
 static int manage_xsend_icccm(struct client *c, Atom atom);
-static void spawn(const char *file, const char * argv[]);
-static void grab_buttons(void);
-static void ungrab_buttons(void);
+static void spawn(const char *file, char *const *argv);
 static void refresh_config(void);
 static bool safe_to_focus(int ws);
 static void setup(void);
@@ -148,9 +148,10 @@ static int get_dec_width(struct client *c);
 static int get_dec_height(struct client *c);
 static int left_width(struct client *c);
 static int top_height(struct client *c);
-static void feature_toggle(void);
+static void feature_toggle(struct client *);
 static void send_config(const char *key, const char *value);
 static void update_config(unsigned int offset, unsigned int value);
+static void suppress_super_tap(void);
 
 static Bool window_is_undecorated(Window window);
 static void window_find_struts(void);
@@ -197,18 +198,31 @@ typedef struct {
     char *const *argv;
 } launcher;
 
+typedef void (*client_function)(struct client *);
+
+typedef struct {
+    unsigned int keysym;
+    client_function function;
+} shortcut;
+
 static const launcher launchers[] = {
-    { XK_Return, "kitty", NULL },
-    { XK_e, "echo ", (const char *[]){"hello", "there", NULL} },
-    { XK_Escape, "xfce4-taskmanager", NULL },
-    { XK_l, "slock", NULL },
-    { XK_space, "rofi", (const char *[]){"-show", "drun", NULL} },
-    { XK_m, NULL, NULL },
-    { XK_c, NULL, NULL },
-    { XK_f, NULL, NULL },
-    { XK_q, NULL, NULL },
-    { XK_i, NULL, NULL },
-    { XK_KP_Add, NULL, NULL },
+    {XK_Return, "kitty", NULL},
+    {XK_e, "echo ", (char *const[]){"hello", "there", NULL}},
+    {XK_Escape, "xfce4-taskmanager", NULL},
+    {XK_l, "slock", NULL},
+};
+
+static const launcher super_tap_launcher = {0, "rofi", (char *const[]){"-show", "drun", "-kb-cancel", "Super_L,Escape", NULL}};
+
+static const shortcut shortcuts[] = {
+    {XK_m, client_monocle},
+    {XK_c, client_center},
+    {XK_f, client_toggle_fullscreen}, // this has more args but works fine
+    {XK_q, client_close},
+    {XK_i, client_toggle_decorations},
+    {XK_Left, client_snap_left},
+    {XK_Right, client_snap_right},
+    {XK_KP_Add, feature_toggle},
 };
 
 static const launcher nomod_launchers[] = {
@@ -219,6 +233,7 @@ static const launcher nomod_launchers[] = {
 
 static const int num_launchers = sizeof(launchers) / sizeof(launcher);
 static const int num_nomod_launchers = sizeof(nomod_launchers) / sizeof(launcher);
+static const int num_shortcuts = sizeof(shortcuts) / sizeof(shortcut);
 
 #define MWM_HINTS_DECORATIONS (1L << 1)
 #define _NET_WM_STATE_REMOVE 0
@@ -409,20 +424,20 @@ static void client_delete(struct client *c) {
     ewmh_set_client_list();
 }
 
-static void
-monitors_free(void)
-{
+static void monitors_free(void) {
     free(m_list);
     m_list = NULL;
+}
+
+static void client_toggle_fullscreen(struct client *c) {
+    client_fullscreen(c, true, true, true);
 }
 
 /* Set the given Client to be fullscreen. Moves the window to fill the dimensions
  * of the given display.
  * Updates the value of _NET_WM_STATE_FULLSCREEN to reflect fullscreen changes
  */
-static void
-client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max)
-{
+static void client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max) {
     LOGP("fullscreen: toggle: %d fullscreen: %d, max: %d", toggle, fullscreen, max);
 
     int mon = ws_m_list[c->ws];
@@ -591,21 +606,26 @@ static void
 handle_key_press(XEvent *e) {
     XKeyPressedEvent *ev = &e->xkey;
     KeySym keysym = XKeycodeToKeysym(display, ev->keycode, 0);
+    switch (keysym) {
+        case XK_Super_L: super_l_only_pressed = true; break;
+        case XK_Super_R: super_r_only_pressed = true; break;
+    }
+
     if (ev->state & Mod4Mask) {
         for (long unsigned int i = 0; i < num_launchers; i++) {
             if (launchers[i].keysym == keysym && launchers[i].file) {
+                suppress_super_tap();
                 spawn(launchers[i].file, launchers[i].argv);
                 return;
             }
         }
-        switch (keysym) {
-            case XK_f: client_fullscreen(f_client, true, true, true); return;
-            case XK_m: client_monocle(f_client); return;
-            case XK_c: client_center(f_client); return;
-            case XK_q: client_close(f_client); return;
-            case XK_i: client_toggle_decorations(f_client); return;
-            case XK_KP_Add: feature_toggle(); return;
+        for (long unsigned int i = 0; i < num_shortcuts; i++) {
+            if (shortcuts[i].keysym == keysym) {
+                suppress_super_tap();
+                (*(shortcuts[i].function))(f_client);
+                return;
             }
+        }
     } else if (ev->state == 0) {
         for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
             if (nomod_launchers[i].keysym == keysym && nomod_launchers[i].file) {
@@ -634,11 +654,26 @@ handle_key_press(XEvent *e) {
 
 static void handle_key_release(XEvent *e) {
     XKeyReleasedEvent *ev = &e->xkey;
+    bool super_tapped = false;
     if (ev->keycode == alt_keycode) {
         if (alt_tabbing) {
             alt_tabbing = false;
             reorder_focus();
         }
+    } else if (ev->keycode == super_l_keycode) {
+        if (super_l_only_pressed)
+            super_tapped = true;
+        super_l_only_pressed = false;
+
+    } else if (ev->keycode == super_r_keycode) {
+        if (super_r_only_pressed)
+            super_tapped = true;
+        super_r_only_pressed = false;
+    }
+
+    if (super_tapped) {
+        LOGN("super tapped");
+        spawn(super_tap_launcher.file, super_tap_launcher.argv);
     }
 }
 
@@ -659,7 +694,7 @@ static void reorder_focus(void) {
 }
 
 // start a new process
-static void spawn(const char* file, const char * argv[]) {
+static void spawn(const char* file, char *const *argv) {
     struct sigaction sa;
     if (fork() == 0) {
         if (display) {
@@ -736,17 +771,21 @@ static void handle_button_press(XEvent *e) {
                     case 1: // double-click monocle
                         current_time = ev.xbutton.time;
                         if (current_time - last_release < DOUBLECLICK_INTERVAL) {
+                            suppress_super_tap();
                             client_monocle(c);
                             continue;
                         }
                         last_release = current_time;
                         break;
                     case 2: // middle-click close
-                        if (ev.xbutton.subwindow == c->dec)
+                        if (ev.xbutton.subwindow == c->dec) {
+                            suppress_super_tap();
                             client_close(c);
+                        }
                         break;
                     case 3: // right-click hide
                         if (ev.xbutton.subwindow == c->dec) {
+                            suppress_super_tap();
                             client_hide(c);
                             client_manage_focus(NULL);
                         }
@@ -766,9 +805,10 @@ static void handle_button_press(XEvent *e) {
                     continue;
                 }
                 last_motion = current_time;
-                state       = mod_clean(ev.xbutton.state);
+                state = mod_clean(ev.xbutton.state);
                 if (lower_click || (state & (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
                     // super right drag or bottom-border drag: resize window
+                    suppress_super_tap();
                     nw = ev.xmotion.x - x;
                     nh = ev.xmotion.y - y;
                     client_resize_absolute(c, ocw + nw, och + nh);
@@ -776,6 +816,7 @@ static void handle_button_press(XEvent *e) {
                 }
                 else if ((state & (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || bev->button == (unsigned)conf.move_button) {
                     // super left drag: move window
+                    suppress_super_tap();
                     nx = ocx + (ev.xmotion.x - x);
                     ny = ocy + (ev.xmotion.y - y);
                     if (c->mono) {
@@ -1138,21 +1179,6 @@ static void client_hide(struct client *c) {
     // focus_next(c);
 }
 
-static void load_color(XftColor *dest_color, unsigned long raw_color) {
-    XColor x_color;
-    x_color.pixel = raw_color;
-    XQueryColor(display, DefaultColormap(display, screen), &x_color);
-    r_color.blue = x_color.blue;
-    r_color.green = x_color.green;
-    r_color.red = x_color.red;
-    r_color.alpha = DEFAULT_ALPHA;
-
-    XftColorFree(display, DefaultVisual(display, screen), DefaultColormap(display, screen), dest_color);
-    XftColorAllocValue(display, DefaultVisual(display, screen), DefaultColormap(display, screen),
-            &r_color, dest_color);
-}
-
-
 static void load_config(char *conf_path) {
     if (fork() == 0) {
         setsid();
@@ -1350,26 +1376,6 @@ static int manage_xsend_icccm(struct client *c, Atom atom) {
     }
 
     return exists;
-}
-
-static void
-grab_buttons(void)
-{
-    for (int i = 0; i < WORKSPACE_NUMBER; i++)
-        for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
-            XGrabButton(display, conf.move_button, conf.move_mask, tmp->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-            XGrabButton(display, conf.resize_button, conf.resize_mask, tmp->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-        }
-}
-
-static void
-ungrab_buttons(void)
-{
-    for (int i = 0; i < WORKSPACE_NUMBER; i++)
-        for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
-            XUngrabButton(display, conf.move_button, conf.move_mask, tmp->window);
-            XUngrabButton(display, conf.resize_button, conf.resize_mask, tmp->window);
-        }
 }
 
 static void
@@ -1733,6 +1739,11 @@ static void setup(void) {
     normal_cursor = XCreateFontCursor(display, XC_left_ptr);
     XDefineCursor(display, root, normal_cursor);
 
+    alt_keycode = XKeysymToKeycode(display, XK_Alt_L);
+    tab_keycode = XKeysymToKeycode(display, XK_Tab);
+    super_l_keycode = XKeysymToKeycode(display, XK_Super_L);
+    super_r_keycode = XKeysymToKeycode(display, XK_Super_R);
+
     check = XCreateSimpleWindow(display, root, 0, 0, 1, 1, 0, 0, 0);
     nofocus = XCreateSimpleWindow(display, root, -10, -10, 1, 1, 0, 0, 0);
 
@@ -1740,6 +1751,8 @@ static void setup(void) {
     XSelectInput(display, root,
                  StructureNotifyMask | SubstructureRedirectMask | SubstructureNotifyMask | ButtonPressMask | Button1Mask);
     XGrabKey(display, alt_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, super_l_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, super_r_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
 
     for (long unsigned int i = 0; i < num_launchers; i++) {
         grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root);
@@ -1749,6 +1762,11 @@ static void setup(void) {
     for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
         grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, root);
         grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, nofocus);
+    }
+
+    for (long unsigned int i = 0; i < num_shortcuts; i++) {
+        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), 0, root);
+        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), 0, nofocus);
     }
 
     LOGN("selected root input");
@@ -1850,22 +1868,18 @@ client_show(struct client *c)
     }
 }
 
-static void
-client_snap_left(struct client *c)
-{
+static void client_snap_left(struct client *c) {
     int mon;
     mon = ws_m_list[c->ws];
-    client_move_absolute(c, m_list[mon].x + conf.left_gap, m_list[mon].y + conf.top_gap);
-    client_resize_absolute(c, m_list[mon].width / 2 - conf.left_gap, m_list[mon].height - conf.top_gap - conf.bot_gap);
+    client_move_absolute(c, m_list[mon].x + conf.left_gap + left_width(c), m_list[mon].y + conf.top_gap + top_height(c));
+    client_resize_absolute(c, m_list[mon].width / 2 - conf.left_gap - get_dec_width(c), m_list[mon].height - conf.top_gap - conf.bot_gap - get_dec_height(c));
 }
 
-static void
-client_snap_right(struct client *c)
-{
+static void client_snap_right(struct client *c) {
     int mon;
     mon = ws_m_list[c->ws];
-    client_move_absolute(c, m_list[mon].x + m_list[mon].width / 2, m_list[mon].y + conf.top_gap);
-    client_resize_absolute(c, m_list[mon].width / 2 - conf.right_gap, m_list[mon].height - conf.top_gap - conf.bot_gap);
+    client_move_absolute(c, m_list[mon].x + m_list[mon].width / 2 + left_width(c), m_list[mon].y + conf.top_gap + top_height(c));
+    client_resize_absolute(c, m_list[mon].width / 2 - conf.right_gap - get_dec_width(c), m_list[mon].height - conf.top_gap - conf.bot_gap - get_dec_height(c));
 }
 
 static void
@@ -2155,8 +2169,12 @@ int top_height(struct client *c) {
     return c->decorated ? (conf.t_height + conf.i_width) : 0;
 }
 
-static void feature_toggle() {
+static void feature_toggle(struct client *) {
     flight = !flight;
+}
+
+static void suppress_super_tap(void) {
+    super_l_only_pressed = super_r_only_pressed = false;
 }
 
 static Bool check_running() {
@@ -2320,9 +2338,6 @@ int main(int argc, char *argv[]) {
         LOGP("font specified, loading... %s", font_name);
         strncpy(global_font, font_name, sizeof(global_font));
     }
-
-    alt_keycode = XKeysymToKeycode(display, XK_Alt_L);
-    tab_keycode = XKeysymToKeycode(display, XK_Tab);
 
     LOGN("Successfully opened display");
 

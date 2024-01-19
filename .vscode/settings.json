@@ -16,7 +16,10 @@
         "array": "c",
         "string": "c",
         "string_view": "c",
-        "span": "c"
+        "span": "c",
+        "chrono": "c",
+        "tuple": "c",
+        "limits": "c"
     },
     "editor.formatOnType": true,
     "[lisp]": {
