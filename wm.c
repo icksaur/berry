@@ -335,20 +335,34 @@ static void client_decorations_create(struct client *c) {
 /* Create new "dummy" windows to be used as decorations for the given client */
 static void client_decorations_show(struct client *c) {
     c->decorated = true;
-    XMoveResizeWindow(display, c->window, left_width(c), top_height(c), get_actual_width(c), get_actual_height(c));
-
+    if (c->mono)  {
+        XMoveResizeWindow(display, c->window, left_width(c), top_height(c), c->geom.x - get_dec_width(c), c->geom.y - get_dec_height(c));
+        c->geom.x += left_width(c);
+        c->geom.y += top_height(c);
+        c->geom.height -= get_dec_height(c);
+        c->geom.width -= get_dec_width(c);
+    }  else  {
+        XMoveWindow(display, c->window, get_dec_width(c), get_dec_height(c));
+    }
     draw_text(c, true);
+    client_refresh(c);
     ewmh_set_frame_extents(c);
     client_refresh(c); // reposition client within decoration
 }
 
 /* Destroy any "dummy" windows associated with the given Client as decorations */
-static void
-client_decorations_destroy(struct client *c)
-{
-    LOGN("Removing decorations");
+static void client_decorations_destroy(struct client *c) {
+    if (c->mono || c->fullscreen) {
+        XMoveResizeWindow(display, c->window, 0, 0, get_actual_width(c), get_actual_height(c));
+        c->geom.x -= left_width(c);
+        c->geom.y -= top_height(c);
+        c->geom.height = get_actual_height(c);
+        c->geom.width = get_actual_width(c);
+    } else {
+        XMoveWindow(display, c->window, 0, 0);
+    }
     c->decorated = false;
-    XMoveResizeWindow(display, c->window, 0, 0, c->geom.width, c->geom.height);     
+    client_refresh(c);
     ewmh_set_frame_extents(c);
 }
 
@@ -690,7 +704,7 @@ static void handle_button_press(XEvent *e) {
         f_last_client = c; // prepare a focus item for LRU
         client_manage_focus(c);
     }
- 
+
     if (!(bev->state & Mod4Mask)) { // if it's not a super mod combo
         // check to see if we should pass input to this client
         int wx, wy;
@@ -950,13 +964,13 @@ static void handle_configure_notify(XEvent *e) {
         int cx = left_width(c);
         int cy = top_height(c);
         if (c->window == ev->window ) {
-            LOGP("configure for client %s from XSendEvent", ev->send_event ? "is" : "is NOT");
-            LOGP("configure for client override_redirect is %d", ev->override_redirect ? "True" : "False");
+            // LOGP("configure for client %s from XSendEvent", ev->send_event ? "is" : "is NOT");
+            // LOGP("configure for client override_redirect is %d", ev->override_redirect ? "True" : "False");
             if (ev->x != cx || ev->y != cy) {
                 // Some clients attempt to move themselves within the frame.  Move them back.
                 unsigned int cw = c->geom.width;
                 unsigned int ch = c->geom.height;
-                LOGP("client moved in frame from %d,%d, moving to %d,%d w:%d h:%d", ev->x, ev->y, cx, cy, cw, ch);
+                // LOGP("client moved in frame from %d,%d, moving to %d,%d w:%d h:%d", ev->x, ev->y, cx, cy, cw, ch);
                 XMoveResizeWindow(display, c->window, cx, cy, c->geom.width, c->geom.height);
             }
         }
@@ -1302,19 +1316,20 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     XMapWindow(display, c->dec);
     // XFlush(display); // show window with decorations immediately
     // XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
-    XSelectInput(display, c->window, StructureNotifyMask); // unmapnotify for removing clients
+    XSelectInput(display, c->window, StructureNotifyMask|PropertyChangeMask); // unmapnotify for removing clients, propertynotify for setting title
     //XSelectInput(display, c->dec, SubstructureRedirectMask);
     //XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1); // no this is wrong
     XSetWMProtocols(display, c->dec, &wm_atom[WMDeleteWindow], 1);
     XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
     XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+
+    if (f_client)
+        f_last_client = f_client;
     client_manage_focus(c);
     client_update_state(c);
 }
 
-static int
-manage_xsend_icccm(struct client *c, Atom atom)
-{
+static int manage_xsend_icccm(struct client *c, Atom atom) {
     /* This is from a dwm patch by Brendan MacDonell:
      * http://lists.suckless.org/dev/1104/7548.html */
 
@@ -1377,9 +1392,9 @@ client_move_absolute(struct client *c, int x, int y)
     client_notify_move(c);
 }
 
-static void
-client_notify_move(struct client * c) {
-    // comply with ICCCW
+static void client_notify_move(struct client * c) {
+    // comply with ICCCW so that programs know where the are in the root
+    // this makes drag and drop target correctly
     XConfigureEvent cev;
     cev.type = ConfigureNotify;
     cev.send_event = True;
@@ -1394,7 +1409,6 @@ client_notify_move(struct client * c) {
     cev.override_redirect = False;
     cev.border_width = 0;
     cev.above = None;
-    LOGP("sending ConfigureNotify to client at position (%d,%d)", cev.x, cev.y);
     XSendEvent(display, c->window, False, StructureNotifyMask, (XEvent*)&cev);
 }
 
@@ -1507,19 +1521,17 @@ static void monitors_setup(void) {
     ewmh_set_viewport();
 }
 
-static void
-client_refresh(struct client *c)
-{
+static void client_refresh(struct client *c) {
+    bool mono = c->mono;
     LOGN("Refreshing client");
     for (int i = 0; i < 2; i++) {
         client_move_relative(c, 0, 0);
         client_resize_relative(c, 0, 0);
     }
+    c->mono = mono; // moving can clear mono
 }
 
-static void
-refresh_config(void)
-{
+static void refresh_config(void) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
             if (conf.decorate) {
@@ -1910,14 +1922,11 @@ warp_pointer(struct client *c)
     XWarpPointer(display, None, c->dec, 0, 0, 0, 0, c->geom.width / 2, c->geom.height / 2);
 }
 
-static void
-client_toggle_decorations(struct client *c)
-{
+static void client_toggle_decorations(struct client *c) {
     if (c->decorated)
         client_decorations_destroy(c);
-    else {
+    else if (!c->fullscreen) // don't undecorate fullscreen windows
         client_decorations_show(c);
-    }
 }
 
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen) {
