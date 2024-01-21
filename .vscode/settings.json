@@ -19,7 +19,8 @@
         "span": "c",
         "chrono": "c",
         "tuple": "c",
-        "limits": "c"
+        "limits": "c",
+        "types.h": "c"
     },
     "editor.formatOnType": true,
     "[lisp]": {

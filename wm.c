@@ -6,34 +6,34 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <X11/XF86keysym.h>
 #include <X11/Xatom.h>
+#include <X11/Xft/Xft.h>
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
+#include <X11/cursorfont.h>
 #include <X11/extensions/Xinerama.h>
 #include <X11/extensions/shape.h>
-#include <X11/cursorfont.h>
-#include <X11/Xft/Xft.h>
-#include <X11/XF86keysym.h>
 #include <xcb/xcb_ewmh.h>
 
 #include "globals.h"
 #include "types.h"
 #include "utils.h"
 
-static struct client *f_client = NULL; /* focused client */
-static struct client *f_last_client = NULL; /* previously focused client */
+static struct client *f_client = NULL;          /* focused client */
+static struct client *f_last_client = NULL;     /* previously focused client */
 static struct client *c_list[WORKSPACE_NUMBER]; /* 'stack' of managed clients in drawing order */
 static struct client *f_list[WORKSPACE_NUMBER]; /* ordered lists for clients to be focused */
-static struct monitor *m_list = NULL; /* All saved monitors */
-static struct config conf; /* gloabl config */
-static int ws_m_list[WORKSPACE_NUMBER]; /* Mapping from workspaces to associated monitors */
+static struct monitor *m_list = NULL;           /* All saved monitors */
+static struct config conf;                      /* gloabl config */
+static int ws_m_list[WORKSPACE_NUMBER];         /* Mapping from workspaces to associated monitors */
 static int curr_ws = 0;
 static int m_count = 0;
 static Cursor move_cursor, normal_cursor;
@@ -126,7 +126,7 @@ static void monitors_setup(void);
 
 static void reorder_focus(void);
 static void draw_text(struct client *c, bool focused);
-static struct client* get_client_from_window(Window w);
+static struct client *get_client_from_window(Window w);
 static void load_config(char *conf_path);
 static void manage_new_window(Window w, XWindowAttributes *wa);
 static int manage_xsend_icccm(struct client *c, Atom atom);
@@ -159,36 +159,37 @@ static void window_find_struts(void);
 typedef void (*x11_event_handler_t)(XEvent *e);
 
 /* Native X11 Event handler */
-static const x11_event_handler_t event_handler [LASTEvent] = {
-    [MapRequest]       = handle_map_request,
-    [DestroyNotify]    = handle_destroy_notify,
-    [UnmapNotify]      = handle_unmap_notify,
-    [ReparentNotify]   = handle_reparent_notify,
-    [ConfigureNotify]  = handle_configure_notify,
-    [ConfigureRequest] = handle_configure_request,  
-    [ClientMessage]    = handle_client_message,
-    [KeyPress]         = handle_key_press,
-    [KeyRelease]       = handle_key_release,
-    [ButtonPress]      = handle_button_press,
-    [PropertyNotify]   = handle_property_notify,
-    [Expose]           = handle_expose,
-    [FocusIn]          = handle_focus,
-    [EnterNotify]      = handle_enter_notify,
+static const x11_event_handler_t event_handler[LASTEvent] = {
+    [MapRequest] = handle_map_request,
+    [DestroyNotify] = handle_destroy_notify,
+    [UnmapNotify] = handle_unmap_notify,
+    [ReparentNotify] = handle_reparent_notify,
+    [ConfigureNotify] = handle_configure_notify,
+    [ConfigureRequest] = handle_configure_request,
+    [ClientMessage] = handle_client_message,
+    [KeyPress] = handle_key_press,
+    [KeyRelease] = handle_key_release,
+    [ButtonPress] = handle_button_press,
+    [PropertyNotify] = handle_property_notify,
+    [Expose] = handle_expose,
+    [FocusIn] = handle_focus,
+    [EnterNotify] = handle_enter_notify,
 };
 
-typedef struct  {
+typedef struct {
     const char *key;
     size_t offset;
 } config_setter;
 
-#define CONFIG_VALUE(X) { #X, offsetof(struct config, X) }
+#define CONFIG_VALUE(X) \
+    { #X, offsetof(struct config, X) }
 static config_setter setters[] = {
     CONFIG_VALUE(bf_color),
     CONFIG_VALUE(bu_color),
     CONFIG_VALUE(if_color),
     CONFIG_VALUE(iu_color),
     CONFIG_VALUE(b_width),
-    CONFIG_VALUE(i_width ),
+    CONFIG_VALUE(i_width),
     CONFIG_VALUE(t_height),
     CONFIG_VALUE(bottom_height),
 };
@@ -207,23 +208,23 @@ typedef struct {
 } shortcut;
 
 static const launcher launchers[] = {
-    {XK_Return, "kitty", NULL},
-    {XK_Escape, "xfce4-taskmanager", NULL},
-    {XK_l, "slock", NULL},
+    { XK_Return, "kitty", NULL },
+    { XK_Escape, "xfce4-taskmanager", NULL },
+    { XK_l, "slock", NULL },
 };
 
-static const launcher super_tap_launcher = {0, "rofi", (char *const[]){"-show", "drun", "-kb-cancel", "Super_L,Escape", NULL}};
+static const launcher super_tap_launcher = { 0, "rofi", (char *const[]){ "-show", "drun", "-kb-cancel", "Super_L,Escape", NULL } };
 
 static const shortcut shortcuts[] = {
-    {XK_m, client_monocle},
-    {XK_c, client_center},
-    {XK_f, client_toggle_fullscreen}, // this has more args but works fine
-    {XK_q, client_close},
-    {XK_i, client_toggle_decorations},
-    {XK_Left, client_snap_left},
-    {XK_Right, client_snap_right},
-    {XK_KP_Add, feature_toggle},
-    {XK_d, toggle_hide_all},
+    { XK_m, client_monocle },
+    { XK_c, client_center },
+    { XK_f, client_toggle_fullscreen }, // this has more args but works fine
+    { XK_q, client_close },
+    { XK_i, client_toggle_decorations },
+    { XK_Left, client_snap_left },
+    { XK_Right, client_snap_right },
+    { XK_KP_Add, feature_toggle },
+    { XK_d, toggle_hide_all },
 };
 
 static const launcher nomod_launchers[] = {
@@ -259,7 +260,7 @@ static void client_center(struct client *c) {
     client_center_in_rect(c, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height);
 }
 
-static int ceil10 (int n) {
+static int ceil10(int n) {
     return (n + 9) - (n + 9) % 10;
 }
 
@@ -273,9 +274,7 @@ static void client_center_in_rect(struct client *c, int x, int y, unsigned w, un
     client_refresh(c); // in case we went over the top gap
 }
 
-static void
-draw_text(struct client *c, bool focused)
-{
+static void draw_text(struct client *c, bool focused) {
     XftDraw *draw;
     XftColor *xft_render_color;
     XGlyphInfo extents;
@@ -306,7 +305,6 @@ draw_text(struct client *c, bool focused)
         return;
     }
 
-
     XClearWindow(display, c->dec);
     draw = XftDrawCreate(display, c->dec, DefaultVisual(display, screen), DefaultColormap(display, screen));
     xft_render_color = focused ? &xft_focus_color : &xft_unfocus_color;
@@ -315,18 +313,18 @@ draw_text(struct client *c, bool focused)
     (unsigned int)xft_render_color->color.red, (unsigned int)xft_render_color->color.green, (unsigned int)xft_render_color->color.blue,
     x, y);
     LOGP("   %s", c->title);*/
-    XftDrawStringUtf8(draw, xft_render_color, font, x, y, (XftChar8 *) c->title, strlen(c->title));
+    XftDrawStringUtf8(draw, xft_render_color, font, x, y, (XftChar8 *)c->title, strlen(c->title));
     XftDrawDestroy(draw);
 }
 
 // Try to close a window using soft close protocol.  If it's not supported, destroy the window.
-static void client_close(struct client *c) {   
+static void client_close(struct client *c) {
     if (!manage_xsend_icccm(c, wm_atom[WMDeleteWindow])) {
         XDestroyWindow(display, c->window);
     }
 }
 
-// create decoration window 
+// create decoration window
 static void client_decorations_create(struct client *c) {
     int w = c->geom.width + get_dec_width(c);
     int h = c->geom.height + get_dec_height(c);
@@ -334,7 +332,7 @@ static void client_decorations_create(struct client *c) {
     int y = c->geom.y - top_height(c);
 
     c->dec = XCreateSimpleWindow(display, root, x, y, w, h, conf.b_width,
-            conf.bu_color, conf.bf_color);
+                                 conf.bu_color, conf.bf_color);
 
     XReparentWindow(display, c->window, c->dec, left_width(c), top_height(c));
 
@@ -345,13 +343,13 @@ static void client_decorations_create(struct client *c) {
 /* Create new "dummy" windows to be used as decorations for the given client */
 static void client_decorations_show(struct client *c) {
     c->decorated = true;
-    if (c->mono)  {
+    if (c->mono) {
         XMoveResizeWindow(display, c->window, left_width(c), top_height(c), c->geom.x - get_dec_width(c), c->geom.y - get_dec_height(c));
         c->geom.x += left_width(c);
         c->geom.y += top_height(c);
         c->geom.height -= get_dec_height(c);
         c->geom.width -= get_dec_width(c);
-    }  else  {
+    } else {
         XMoveWindow(display, c->window, get_dec_width(c), get_dec_height(c));
     }
     draw_text(c, true);
@@ -408,7 +406,7 @@ static void client_delete(struct client *c) {
 
     // need to focus a new window
     if (f_client == c)
-        client_manage_focus(NULL);  
+        client_manage_focus(NULL);
 
     ewmh_set_client_list();
 }
@@ -492,7 +490,7 @@ static void focus_next(struct client *c) {
 }
 
 /* Returns the struct client associated with the given struct Window */
-static struct client* get_client_from_window(Window w) {
+static struct client *get_client_from_window(Window w) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
             if (tmp->window == w)
@@ -506,8 +504,7 @@ static struct client* get_client_from_window(Window w) {
 }
 
 /* Redirect an XEvent from berry's client program, berryc */
-static void
-handle_client_message(XEvent *e) {
+static void handle_client_message(XEvent *e) {
     XClientMessageEvent *cme = &e->xclient;
     LOGP("e: message %d", cme->window);
     long cmd, *data;
@@ -524,15 +521,17 @@ handle_client_message(XEvent *e) {
 
         if (action == net_atom[NetWMStateMaximizedHorz] || action == net_atom[NetWMStateMaximizedVert]) {
             switch (cme->data.l[0]) {
-                case _NET_WM_STATE_ADD:
-                    if (!c->mono) client_monocle(c);
-                    break;
-                case _NET_WM_STATE_REMOVE:
-                    if (c->mono) client_monocle(c);
-                    break;
-                case _NET_WM_STATE_TOGGLE:
+            case _NET_WM_STATE_ADD:
+                if (!c->mono)
                     client_monocle(c);
-                    break;
+                break;
+            case _NET_WM_STATE_REMOVE:
+                if (c->mono)
+                    client_monocle(c);
+                break;
+            case _NET_WM_STATE_TOGGLE:
+                client_monocle(c);
+                break;
             }
         }
 
@@ -566,14 +565,14 @@ handle_client_message(XEvent *e) {
         data = cme->data.l;
         long direction = cme->data.l[2];
         switch (direction) {
-            case XCB_EWMH_WM_MOVERESIZE_MOVE:
-                client_try_drag(c, True, True, cme->data.l[0], cme->data.l[1]);
-                break;
-            case XCB_EWMH_WM_MOVERESIZE_SIZE_RIGHT:
-            case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOM:
-            case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOMRIGHT:
-                client_try_drag(c, True, False, cme->data.l[0], cme->data.l[1]);
-                break;
+        case XCB_EWMH_WM_MOVERESIZE_MOVE:
+            client_try_drag(c, True, True, cme->data.l[0], cme->data.l[1]);
+            break;
+        case XCB_EWMH_WM_MOVERESIZE_SIZE_RIGHT:
+        case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOM:
+        case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOMRIGHT:
+            client_try_drag(c, True, False, cme->data.l[0], cme->data.l[1]);
+            break;
         }
     } else if (cme->message_type == wm_atom[WMChangeState]) {
         struct client *c = get_client_from_window(cme->window);
@@ -591,14 +590,17 @@ handle_client_message(XEvent *e) {
     }
 }
 
-static void
-handle_key_press(XEvent *e) {
+static void handle_key_press(XEvent *e) {
     XKeyPressedEvent *ev = &e->xkey;
     KeySym keysym = XKeycodeToKeysym(display, ev->keycode, 0);
     switch (keysym) {
-        case XK_Super_L: super_l_only_pressed = true; break;
-        case XK_Super_R: super_r_only_pressed = true; break;
-    }  
+    case XK_Super_L:
+        super_l_only_pressed = true;
+        break;
+    case XK_Super_R:
+        super_r_only_pressed = true;
+        break;
+    }
 
     if (ev->state & Mod4Mask) {
         for (long unsigned int i = 0; i < num_launchers; i++) {
@@ -632,7 +634,7 @@ handle_key_press(XEvent *e) {
             }
         }
     }
-    
+
     if (f_client) {
         XKeyEvent new_event = (*ev);
         new_event.window = f_client->window;
@@ -682,20 +684,20 @@ static void reorder_focus(void) {
 }
 
 // start a new process
-static void spawn(const char* file, char *const *argv) {
+static void spawn(const char *file, char *const *argv) {
     struct sigaction sa;
     if (fork() == 0) {
         if (display) {
-			close(ConnectionNumber(display));
+            close(ConnectionNumber(display));
         }
-		setsid();
+        setsid();
 
-		sigemptyset(&sa.sa_mask);
-		sa.sa_flags = 0;
-		sa.sa_handler = SIG_DFL;
-		sigaction(SIGCHLD, &sa, NULL);
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sa.sa_handler = SIG_DFL;
+        sigaction(SIGCHLD, &sa, NULL);
 
-		execvp(file, argv);
+        execvp(file, argv);
         LOGP("failed to run %s", file);
         exit(1);
     }
@@ -751,80 +753,79 @@ static void handle_button_press(XEvent *e) {
         return;
     }
     do {
-        XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask|FocusChangeMask, &ev);
+        XMaskEvent(display, MOUSEMASK | ExposureMask | SubstructureRedirectMask | FocusChangeMask, &ev);
         switch (ev.type) {
-            case ButtonRelease:
-                if (ignore_buttonup)
-                    break;
-                LOGP("button released: %d", ev.xbutton.button);
-                switch (ev.xbutton.button) {
-                    case 1: // double-click monocle
-                        current_time = ev.xbutton.time;
-                        if (current_time - last_release < DOUBLECLICK_INTERVAL) {
-                            suppress_super_tap();
-                            client_monocle(c);
-                            continue;
-                        }
-                        last_release = current_time;
-                        break;
-                    case 2: // middle-click close
-                        if (ev.xbutton.subwindow == c->dec) {
-                            suppress_super_tap();
-                            client_close(c);
-                        }
-                        break;
-                    case 3: // right-click hide
-                        if (ev.xbutton.subwindow == c->dec) {
-                            suppress_super_tap();
-                            client_hide(c);
-                            if (f_client == c)
-                                client_manage_focus(NULL);
-                        }
-                        break;
-                }
+        case ButtonRelease:
+            if (ignore_buttonup)
                 break;
-            case FocusIn:
-            case ConfigureRequest:
-            case Expose:
-            case MapRequest:
-                event_handler[ev.type](&ev);
-                break;
-            case MotionNotify:
-                current_time = ev.xmotion.time;
-                Time diff_time = current_time - last_motion;
-                if (diff_time < (Time)conf.pointer_interval) {
+            LOGP("button released: %d", ev.xbutton.button);
+            switch (ev.xbutton.button) {
+            case 1: // double-click monocle
+                current_time = ev.xbutton.time;
+                if (current_time - last_release < DOUBLECLICK_INTERVAL) {
+                    suppress_super_tap();
+                    client_monocle(c);
                     continue;
                 }
-                last_motion = current_time;
-                state = mod_clean(ev.xbutton.state);
-                if (lower_click || (state & (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
-                    // super right drag or bottom-border drag: resize window
-                    suppress_super_tap();
-                    nw = ev.xmotion.x - x;
-                    nh = ev.xmotion.y - y;
-                    client_resize_absolute(c, ocw + nw, och + nh);
-                    ignore_buttonup = true;
-                }
-                else if ((state & (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || bev->button == (unsigned)conf.move_button) {
-                    // super left drag: move window
-                    suppress_super_tap();
-                    nx = ocx + (ev.xmotion.x - x);
-                    ny = ocy + (ev.xmotion.y - y);
-                    if (c->mono) {
-                        // moving a maximized window restores previous size
-                        client_resize_absolute(c, c->prev.width, c->prev.height);
-                    }
-                    client_move_absolute(c, nx, ny);
-                    ignore_buttonup = true;
-                }
-                // XFlush(display); // not needed?
+                last_release = current_time;
                 break;
+            case 2: // middle-click close
+                if (ev.xbutton.subwindow == c->dec) {
+                    suppress_super_tap();
+                    client_close(c);
+                }
+                break;
+            case 3: // right-click hide
+                if (ev.xbutton.subwindow == c->dec) {
+                    suppress_super_tap();
+                    client_hide(c);
+                    if (f_client == c)
+                        client_manage_focus(NULL);
+                }
+                break;
+            }
+            break;
+        case FocusIn:
+        case ConfigureRequest:
+        case Expose:
+        case MapRequest:
+            event_handler[ev.type](&ev);
+            break;
+        case MotionNotify:
+            current_time = ev.xmotion.time;
+            Time diff_time = current_time - last_motion;
+            if (diff_time < (Time)conf.pointer_interval) {
+                continue;
+            }
+            last_motion = current_time;
+            state = mod_clean(ev.xbutton.state);
+            if (lower_click || (state & (unsigned)conf.resize_mask && bev->button == (unsigned)conf.resize_button)) {
+                // super right drag or bottom-border drag: resize window
+                suppress_super_tap();
+                nw = ev.xmotion.x - x;
+                nh = ev.xmotion.y - y;
+                client_resize_absolute(c, ocw + nw, och + nh);
+                ignore_buttonup = true;
+            } else if ((state & (unsigned)conf.move_mask && bev->button == (unsigned)conf.move_button) || bev->button == (unsigned)conf.move_button) {
+                // super left drag: move window
+                suppress_super_tap();
+                nx = ocx + (ev.xmotion.x - x);
+                ny = ocy + (ev.xmotion.y - y);
+                if (c->mono) {
+                    // moving a maximized window restores previous size
+                    client_resize_absolute(c, c->prev.width, c->prev.height);
+                }
+                client_move_absolute(c, nx, ny);
+                ignore_buttonup = true;
+            }
+            // XFlush(display); // not needed?
+            break;
         }
     } while (ev.type != ButtonRelease);
     XUngrabPointer(display, CurrentTime);
 }
 
-static void client_try_drag(struct client * c, int dragged, int is_move, int x, int y) {
+static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y) {
     XEvent ev;
     int nx, ny, ocx, ocy, nw, nh, ocw, och, rx, ry;
     unsigned int mask;
@@ -836,37 +837,34 @@ static void client_try_drag(struct client * c, int dragged, int is_move, int x, 
 
     LOGP("client decorations %s", is_move ? "move" : "resize");
     LOGP("ocx: %d, ocy: %d, x: %d, y: %d\n", ocx, ocy, x, y);
-    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess)
-    {
+    if (XGrabPointer(display, root, False, MOUSEMASK, GrabModeAsync, GrabModeAsync, None, normal_cursor, CurrentTime) != GrabSuccess) {
         return;
     }
     XQueryPointer(display, c->window, &root_return, &client_return, &rx, &ry, &x, &y, &mask);
     do {
-        XMaskEvent(display, MOUSEMASK|ExposureMask|SubstructureRedirectMask|FocusChangeMask, &ev);
+        XMaskEvent(display, MOUSEMASK | ExposureMask | SubstructureRedirectMask | FocusChangeMask, &ev);
         switch (ev.type) {
-            case ButtonRelease:
-                break;
-            case FocusIn:
-            case ConfigureRequest:
-            case Expose:
-            case MapRequest:
-                event_handler[ev.type](&ev);
-                break;
-            case MotionNotify:
-                if (!is_move) {
-                    nw = ocw + (ev.xmotion.x - rx);
-                    nh = och + (ev.xmotion.y - ry);
-                    LOGP("resize nw: %d, nh: %d, ev.x: %d, ev.y: %d", nw, nh, ev.xmotion.x, ev.xmotion.y);
-                    client_resize_absolute(c, nw, nh);
-                }
-                else
-                {
-                    nx = ocx + (ev.xmotion.x - rx);
-                    ny = ocy + (ev.xmotion.y - ry);
-                    LOGP("move nx: %d, ny: %d, ev.x: %d, ev.y: %d", nx, ny, ev.xmotion.x, ev.xmotion.y);
-                    client_move_absolute(c, nx, ny);
-                }
-                break;
+        case ButtonRelease:
+            break;
+        case FocusIn:
+        case ConfigureRequest:
+        case Expose:
+        case MapRequest:
+            event_handler[ev.type](&ev);
+            break;
+        case MotionNotify:
+            if (!is_move) {
+                nw = ocw + (ev.xmotion.x - rx);
+                nh = och + (ev.xmotion.y - ry);
+                LOGP("resize nw: %d, nh: %d, ev.x: %d, ev.y: %d", nw, nh, ev.xmotion.x, ev.xmotion.y);
+                client_resize_absolute(c, nw, nh);
+            } else {
+                nx = ocx + (ev.xmotion.x - rx);
+                ny = ocy + (ev.xmotion.y - ry);
+                LOGP("move nx: %d, ny: %d, ev.x: %d, ev.y: %d", nx, ny, ev.xmotion.x, ev.xmotion.y);
+                client_move_absolute(c, nx, ny);
+            }
+            break;
         }
     } while (ev.type != ButtonRelease);
     XUngrabPointer(display, CurrentTime);
@@ -875,28 +873,27 @@ static void client_try_drag(struct client * c, int dragged, int is_move, int x, 
 static void client_update_state(struct client *c) {
     long data[2];
     data[0] = c->hidden ? IconicState : NormalState; // NormalState, IconicState, etc.
-    data[1] = None;  // Icon window, if applicable
-    XChangeProperty(display, c->window, XInternAtom(display, "WM_STATE", False), 
+    data[1] = None;                                  // Icon window, if applicable
+    XChangeProperty(display, c->window, XInternAtom(display, "WM_STATE", False),
                     XA_ATOM, 32, PropModeReplace, (unsigned char *)data, 2);
-
 
     // the rest of this tries to add or remove horizontal state as needed
     Atom actualType;
     int format;
     unsigned long num_items, bytes_after;
-    Atom* states = NULL;
+    Atom *states = NULL;
     Bool set_maximized = c->mono == True;
     Bool horz_found = False;
     Bool vert_found = False;
     Bool list_changed = False;
     if (!XGetWindowProperty(display, c->window, net_atom[NetWMState], 0, LONG_MAX, False, XA_ATOM,
-        &actualType, &format, &num_items, &bytes_after,  (unsigned char **)&states) == Success)
+                            &actualType, &format, &num_items, &bytes_after, (unsigned char **)&states) == Success)
         return;
 
     if (!states)
         return;
 
-    Atom * atoms = (Atom*)malloc(sizeof(Atom) * num_items + 2);
+    Atom *atoms = (Atom *)malloc(sizeof(Atom) * num_items + 2);
     int new_num_atoms = 0;
 
     for (unsigned long i = 0; i < num_items; i++) {
@@ -929,15 +926,13 @@ static void client_update_state(struct client *c) {
 
     if (list_changed) {
         XChangeProperty(display, c->window, net_atom[NetWMStateMaximizedVert], XA_ATOM, 32,
-        PropModeReplace, (unsigned char*)atoms, new_num_atoms);
+                        PropModeReplace, (unsigned char *)atoms, new_num_atoms);
     }
 
     free(atoms);
 }
 
-static void
-handle_expose(XEvent *e)
-{
+static void handle_expose(XEvent *e) {
     XExposeEvent *ev = &e->xexpose;
     struct client *c;
     bool focused;
@@ -953,18 +948,13 @@ handle_expose(XEvent *e)
     draw_text(c, focused);
 }
 
-static void
-handle_focus(XEvent *e)
-{
+static void handle_focus(XEvent *e) {
     XFocusChangeEvent *ev = &e->xfocus;
     UNUSED(ev);
-
     return;
 }
 
-static void
-handle_property_notify(XEvent *e)
-{
+static void handle_property_notify(XEvent *e) {
     XPropertyEvent *ev = &e->xproperty;
     struct client *c;
 
@@ -989,7 +979,7 @@ static void handle_configure_notify(XEvent *e) {
     if (c != NULL) {
         int cx = left_width(c);
         int cy = top_height(c);
-        if (c->window == ev->window ) {
+        if (c->window == ev->window) {
             // LOGP("configure for client %s from XSendEvent", ev->send_event ? "is" : "is NOT");
             // LOGP("configure for client override_redirect is %d", ev->override_redirect ? "True" : "False");
             if (ev->x != cx || ev->y != cy) {
@@ -1004,31 +994,35 @@ static void handle_configure_notify(XEvent *e) {
 
     if (ev->window == root) {
         // handle display size changes by the root window
-
         LOGN("Handling configure notify event for root window");
         display_width = ev->width;
         display_height = ev->height;
         monitors_free();
         monitors_setup();
     }
-}   
+}
 
-static void
-handle_configure_request(XEvent *e)
-{
+static void handle_configure_request(XEvent *e) {
     struct client *c;
     XConfigureRequestEvent *ev = &e->xconfigurerequest;
     XWindowChanges wc;
 
     LOGN("Handling configure request event");
 
-    if (ev->value_mask & CWX) wc.x = ev->x;
-    if (ev->value_mask & CWY) wc.y = ev->y;
-    if (ev->value_mask & CWWidth) wc.width = ev->width;
-    if (ev->value_mask & CWHeight) wc.height = ev->height;
-    if (ev->value_mask & CWBorderWidth) wc.border_width = ev->border_width;
-    if (ev->value_mask & CWSibling) wc.sibling = ev->above;
-    if (ev->value_mask & CWStackMode) wc.stack_mode = ev->detail;
+    if (ev->value_mask & CWX)
+        wc.x = ev->x;
+    if (ev->value_mask & CWY)
+        wc.y = ev->y;
+    if (ev->value_mask & CWWidth)
+        wc.width = ev->width;
+    if (ev->value_mask & CWHeight)
+        wc.height = ev->height;
+    if (ev->value_mask & CWBorderWidth)
+        wc.border_width = ev->border_width;
+    if (ev->value_mask & CWSibling)
+        wc.sibling = ev->above;
+    if (ev->value_mask & CWStackMode)
+        wc.stack_mode = ev->detail;
     XConfigureWindow(display, ev->window, ev->value_mask, &wc); // Seems noisy because it makes a new configure.  This causes the window to be reconfigured to the last size when it was closed. Not sure how that works.
     c = get_client_from_window(ev->window);
 
@@ -1036,22 +1030,18 @@ handle_configure_request(XEvent *e)
         if (c->fullscreen)
             return;
 
-        if (ev->value_mask & (CWX|CWY))
-        {
+        if (ev->value_mask & (CWX | CWY)) {
             client_move_relative(c,
-                    wc.x - get_actual_x(c) - 2 * left_width(c),
-                    wc.y - get_actual_y(c) - 2 * top_height(c));
+                                 wc.x - get_actual_x(c) - 2 * left_width(c),
+                                 wc.y - get_actual_y(c) - 2 * top_height(c));
         }
-        if (ev->value_mask & (CWWidth|CWHeight))
-        {
+        if (ev->value_mask & (CWWidth | CWHeight)) {
             client_resize_relative(c,
-                    wc.width - get_actual_width(c) + 2 * get_dec_width(c),
-                    wc.height - get_actual_height(c) + 2 * get_dec_height(c));
+                                   wc.width - get_actual_width(c) + 2 * get_dec_width(c),
+                                   wc.height - get_actual_height(c) + 2 * get_dec_height(c));
         }
-        if (ev->value_mask & CWStackMode && ev->detail == Above)
-        {
-            if (c->hidden)
-            {
+        if (ev->value_mask & CWStackMode && ev->detail == Above) {
+            if (c->hidden) {
                 client_show(c);
             }
         }
@@ -1062,32 +1052,27 @@ handle_configure_request(XEvent *e)
     }
 }
 
-static void
-handle_map_request(XEvent *e)
-{
+static void handle_map_request(XEvent *e) {
     static XWindowAttributes wa;
     XMapRequestEvent *ev = &e->xmaprequest;
 
     /*LOGN("Handling map request event");*/
 
     if (!XGetWindowAttributes(display, ev->window, &wa))
-        return; 
+        return;
     if (wa.override_redirect)
         return;
 
     manage_new_window(ev->window, &wa);
 }
 
-static void
-handle_destroy_notify(XEvent *e)
-{
+static void handle_destroy_notify(XEvent *e) {
     XDestroyWindowEvent *ev = &e->xdestroywindow;
     struct client *c = get_client_from_window(ev->window);
     LOGP("e: destroy %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
 }
 
-static void
-handle_reparent_notify(XEvent *e) {
+static void handle_reparent_notify(XEvent *e) {
     XReparentEvent *ev = &e->xreparent;
     struct client *c = get_client_from_window(ev->window);
     LOGP("e: reparent %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
@@ -1123,7 +1108,7 @@ static void handle_unmap_notify(XEvent *e) {
         int border = conf.b_width + conf.i_width;
         XSelectInput(display, c->dec, NoEventMask); // stop any further event notifications
         XSelectInput(display, c->window, NoEventMask);
-        XUnmapWindow(display, c->dec); // this is a bit too late and picom will fade out only the decorations
+        XUnmapWindow(display, c->dec);                                                                     // this is a bit too late and picom will fade out only the decorations
         XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height); // why do we need to do this?
         XDestroyWindow(display, c->dec);
         client_delete(c);
@@ -1132,9 +1117,7 @@ static void handle_unmap_notify(XEvent *e) {
     }
 }
 
-static void
-handle_enter_notify(XEvent *e)
-{
+static void handle_enter_notify(XEvent *e) {
     XEnterWindowEvent *ev = &e->xcrossing;
 
     struct client *c;
@@ -1203,7 +1186,7 @@ static void client_manage_focus(struct client *c) {
         f_client = c;
         reorder_focus();
     } else { // client is null, might happen when switching to a new workspace
-      //  without any active clients
+             //  without any active clients
         LOGN("Giving focus to dummy window");
         f_client = NULL;
         XSetInputFocus(display, nofocus, RevertToPointerRoot, CurrentTime);
@@ -1212,7 +1195,7 @@ static void client_manage_focus(struct client *c) {
 
 static void grab_button_modifiers(Display *display, unsigned int button, unsigned int modifiers, Window window) {
     unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
-    for (int i = 0; i < sizeof(modmasks)/sizeof(modmasks[0]); i++) {
+    for (int i = 0; i < sizeof(modmasks) / sizeof(modmasks[0]); i++) {
         XGrabButton(display, button, modifiers | modmasks[i], window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
     }
 }
@@ -1224,22 +1207,21 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     int di;
     unsigned long dl;
     if (XGetWindowProperty(display, w, net_atom[NetWMWindowType], 0,
-                sizeof (Atom), False, XA_ATOM, &da, &di, &dl, &dl,
-                &prop_ret) == Success) {
+                           sizeof(Atom), False, XA_ATOM, &da, &di, &dl, &dl,
+                           &prop_ret) == Success) {
         if (prop_ret) {
             prop = ((Atom *)prop_ret)[0];
-            if ((prop == net_atom[NetWMWindowTypeDock]    && !conf.manage[Dock])    ||
+            if ((prop == net_atom[NetWMWindowTypeDock] && !conf.manage[Dock]) ||
                 (prop == net_atom[NetWMWindowTypeToolbar] && !conf.manage[Toolbar]) ||
                 (prop == net_atom[NetWMWindowTypeUtility] && !conf.manage[Utility]) ||
-                (prop == net_atom[NetWMWindowTypeDialog]  && !conf.manage[Dialog])  ||
-                (prop == net_atom[NetWMWindowTypeMenu]    && !conf.manage[Menu])    ||
-                (prop == net_atom[NetWMWindowTypePopupMenu])                        ||
-                (prop == net_atom[NetWMWindowTypeDropdownMenu])                     ||
-                (prop == net_atom[NetWMWindowTypeTooltip])                          ||
-                (prop == net_atom[NetWMWindowTypeNotification])                     ||
-                (prop == net_atom[NetWMWindowTypeCombo])                            ||
-                (prop == net_atom[NetWMWindowTypeDND])
-                ) {
+                (prop == net_atom[NetWMWindowTypeDialog] && !conf.manage[Dialog]) ||
+                (prop == net_atom[NetWMWindowTypeMenu] && !conf.manage[Menu]) ||
+                (prop == net_atom[NetWMWindowTypePopupMenu]) ||
+                (prop == net_atom[NetWMWindowTypeDropdownMenu]) ||
+                (prop == net_atom[NetWMWindowTypeTooltip]) ||
+                (prop == net_atom[NetWMWindowTypeNotification]) ||
+                (prop == net_atom[NetWMWindowTypeCombo]) ||
+                (prop == net_atom[NetWMWindowTypeDND])) {
                 XMapWindow(display, w);
                 LOGN("Window is of type dock, toolbar, utility, menu, or splash: not managing");
                 LOGN("Mapping new window, not managed");
@@ -1327,12 +1309,12 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     XMapWindow(display, c->dec);
     // XFlush(display); // show window with decorations immediately
     // XSelectInput(display, c->window, EnterWindowMask|FocusChangeMask|PropertyChangeMask|StructureNotifyMask);
-    XSelectInput(display, c->window, StructureNotifyMask|PropertyChangeMask); // unmapnotify for removing clients, propertynotify for setting title
-    //XSelectInput(display, c->dec, SubstructureRedirectMask);
-    //XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1); // no this is wrong
+    XSelectInput(display, c->window, StructureNotifyMask | PropertyChangeMask); // unmapnotify for removing clients, propertynotify for setting title
+    // XSelectInput(display, c->dec, SubstructureRedirectMask);
+    // XSetWMProtocols(display, c->window, &wm_atom[WMDeleteWindow], 1); // no this is wrong
     XSetWMProtocols(display, c->dec, &wm_atom[WMDeleteWindow], 1);
-    XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
-    XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask|ButtonReleaseMask|PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+    XGrabButton(display, conf.move_button, conf.move_mask, c->window, True, ButtonPressMask | ButtonReleaseMask | PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
+    XGrabButton(display, conf.resize_button, conf.resize_mask, c->window, True, ButtonPressMask | ButtonReleaseMask | PointerMotionMask, GrabModeAsync, GrabModeAsync, None, None);
 
     if (f_client)
         f_last_client = f_client;
@@ -1368,9 +1350,7 @@ static int manage_xsend_icccm(struct client *c, Atom atom) {
     return exists;
 }
 
-static void
-client_move_absolute(struct client *c, int x, int y)
-{
+static void client_move_absolute(struct client *c, int x, int y) {
     XMoveWindow(display, c->dec, x - left_width(c), y - top_height(c));
 
     c->geom.x = x;
@@ -1383,7 +1363,7 @@ client_move_absolute(struct client *c, int x, int y)
     client_notify_move(c);
 }
 
-static void client_notify_move(struct client * c) {
+static void client_notify_move(struct client *c) {
     // comply with ICCCW so that programs know where the are in the root
     // this makes drag and drop target correctly
     XConfigureEvent cev;
@@ -1400,18 +1380,14 @@ static void client_notify_move(struct client * c) {
     cev.override_redirect = False;
     cev.border_width = 0;
     cev.above = None;
-    XSendEvent(display, c->window, False, StructureNotifyMask, (XEvent*)&cev);
+    XSendEvent(display, c->window, False, StructureNotifyMask, (XEvent *)&cev);
 }
 
-static void
-client_move_relative(struct client *c, int x, int y)
-{
+static void client_move_relative(struct client *c, int x, int y) {
     client_move_absolute(c, c->geom.x + x, c->geom.y + y);
 }
 
-static void
-client_move_to_front(struct client *c)
-{
+static void client_move_to_front(struct client *c) {
     int ws;
     ws = c->ws;
 
@@ -1430,13 +1406,11 @@ client_move_to_front(struct client *c)
 
     if (tmp && tmp->next)
         tmp->next = tmp->next->next; /* remove the Client from the list */
-    c->next = c_list[ws]; /* add the client to the front of the list */
+    c->next = c_list[ws];            /* add the client to the front of the list */
     c_list[ws] = c;
 }
 
-static void
-client_monocle(struct client *c)
-{
+static void client_monocle(struct client *c) {
     XEvent ev;
     memset(&ev, 0, sizeof ev);
 
@@ -1463,10 +1437,10 @@ static void client_place(struct client *c) {
     return;
 }
 
-static void
-client_raise(struct client *c) {
+static void client_raise(struct client *c) {
     if (c != NULL) {
-        if (c->dec) XRaiseWindow(display, c->dec ? c->dec : c->window);
+        if (c->dec)
+            XRaiseWindow(display, c->dec ? c->dec : c->window);
     }
 }
 
@@ -1506,7 +1480,7 @@ static void monitors_setup(void) {
         m_list[i].x = m_info[i].x_org;
         m_list[i].y = m_info[i].y_org;
         LOGP("Screen #%d with dim: x=%d y=%d w=%d h=%d",
-                m_list[i].screen, m_list[i].x, m_list[i].y, m_list[i].width, m_list[i].height);
+             m_list[i].screen, m_list[i].x, m_list[i].y, m_list[i].width, m_list[i].height);
     }
 
     ewmh_set_viewport();
@@ -1569,15 +1543,11 @@ static void client_resize_absolute(struct client *c, int w, int h) {
     draw_text(c, f_client == c);
 }
 
-static void
-client_resize_relative(struct client *c, int w, int h)
-{
+static void client_resize_relative(struct client *c, int w, int h) {
     client_resize_absolute(c, c->geom.width + w, c->geom.height + h);
 }
 
-static void
-client_save(struct client *c, int ws)
-{
+static void client_save(struct client *c, int ws) {
     /* Save the client to the "stack" of managed clients */
     c->next = c_list[ws];
     c_list[ws] = c;
@@ -1592,9 +1562,7 @@ client_save(struct client *c, int ws)
 /* This method will return true if it is safe to show a client on the given workspace
  * based on the currently focused workspaces on each monitor.
  */
-static bool
-safe_to_focus(int ws)
-{
+static bool safe_to_focus(int ws) {
     int mon = ws_m_list[ws];
 
     if (m_count == 1)
@@ -1608,9 +1576,7 @@ safe_to_focus(int ws)
     return true;
 }
 
-static void
-client_send_to_ws(struct client *c, int ws)
-{
+static void client_send_to_ws(struct client *c, int ws) {
     int prev, mon_next, mon_prev, x_off, y_off;
     mon_next = ws_m_list[ws];
     mon_prev = ws_m_list[c->ws];
@@ -1639,16 +1605,11 @@ static void client_set_color(struct client *c, unsigned long i_color, unsigned l
     }
 }
 
-
-static void
-client_set_input(struct client *c)
-{
+static void client_set_input(struct client *c) {
     XSetInputFocus(display, c->window, RevertToPointerRoot, CurrentTime);
 }
 
-static void
-client_set_title(struct client *c)
-{
+static void client_set_title(struct client *c) {
     XTextProperty tp;
     char **slist = NULL;
     int count;
@@ -1674,7 +1635,7 @@ client_set_title(struct client *c)
 
 static void grab_super_key(Display *display, int keycode, unsigned int modifiers, Window window) {
     unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
-    for (int i = 0; i < sizeof(modmasks)/sizeof(modmasks[0]); i++) {
+    for (int i = 0; i < sizeof(modmasks) / sizeof(modmasks[0]); i++) {
         XGrabKey(display, keycode, modifiers | modmasks[i], window, True, GrabModeAsync, GrabModeAsync);
     }
 }
@@ -1684,38 +1645,38 @@ static void setup(void) {
     int mon;
     XSetWindowAttributes wa = { .override_redirect = true };
     // Setup our conf initially
-    conf.b_width          = BORDER_WIDTH;
-    conf.t_height         = TITLE_HEIGHT;
-    conf.bottom_height    = BOTTOM_HEIGHT;
-    conf.i_width          = INTERNAL_BORDER_WIDTH;
-    conf.bf_color         = BORDER_FOCUS_COLOR;
-    conf.bu_color         = BORDER_UNFOCUS_COLOR;
-    conf.if_color         = INNER_FOCUS_COLOR;
-    conf.iu_color         = INNER_UNFOCUS_COLOR;
-    conf.m_step           = MOVE_STEP;
-    conf.r_step           = RESIZE_STEP;
-    conf.focus_new        = FOCUS_NEW;
-    conf.t_center         = TITLE_CENTER;
-    conf.top_gap          = TOP_GAP;
-    conf.bot_gap          = BOT_GAP;
-    conf.smart_place      = SMART_PLACE;
-    conf.draw_text        = DRAW_TEXT;
-    conf.manage[Dock]     = MANAGE_DOCK;
-    conf.manage[Dialog]   = MANAGE_DIALOG;
-    conf.manage[Toolbar]  = MANAGE_TOOLBAR;
-    conf.manage[Menu]     = MANAGE_MENU;
-    conf.manage[Splash]   = MANAGE_SPLASH;
-    conf.manage[Utility]  = MANAGE_UTILITY;
-    conf.decorate         = DECORATE_NEW;
-    conf.move_button      = MOVE_BUTTON;
-    conf.move_mask        = MOVE_MASK;
-    conf.resize_button    = RESIZE_BUTTON;
-    conf.resize_mask      = RESIZE_MASK;
-    conf.fs_remove_dec    = FULLSCREEN_REMOVE_DEC;
-    conf.fs_max           = FULLSCREEN_MAX;
+    conf.b_width = BORDER_WIDTH;
+    conf.t_height = TITLE_HEIGHT;
+    conf.bottom_height = BOTTOM_HEIGHT;
+    conf.i_width = INTERNAL_BORDER_WIDTH;
+    conf.bf_color = BORDER_FOCUS_COLOR;
+    conf.bu_color = BORDER_UNFOCUS_COLOR;
+    conf.if_color = INNER_FOCUS_COLOR;
+    conf.iu_color = INNER_UNFOCUS_COLOR;
+    conf.m_step = MOVE_STEP;
+    conf.r_step = RESIZE_STEP;
+    conf.focus_new = FOCUS_NEW;
+    conf.t_center = TITLE_CENTER;
+    conf.top_gap = TOP_GAP;
+    conf.bot_gap = BOT_GAP;
+    conf.smart_place = SMART_PLACE;
+    conf.draw_text = DRAW_TEXT;
+    conf.manage[Dock] = MANAGE_DOCK;
+    conf.manage[Dialog] = MANAGE_DIALOG;
+    conf.manage[Toolbar] = MANAGE_TOOLBAR;
+    conf.manage[Menu] = MANAGE_MENU;
+    conf.manage[Splash] = MANAGE_SPLASH;
+    conf.manage[Utility] = MANAGE_UTILITY;
+    conf.decorate = DECORATE_NEW;
+    conf.move_button = MOVE_BUTTON;
+    conf.move_mask = MOVE_MASK;
+    conf.resize_button = RESIZE_BUTTON;
+    conf.resize_mask = RESIZE_MASK;
+    conf.fs_remove_dec = FULLSCREEN_REMOVE_DEC;
+    conf.fs_max = FULLSCREEN_MAX;
     conf.pointer_interval = POINTER_INTERVAL;
-    conf.follow_pointer   = FOLLOW_POINTER;
-    conf.warp_pointer     = WARP_POINTER;
+    conf.follow_pointer = FOLLOW_POINTER;
+    conf.warp_pointer = WARP_POINTER;
 
     root = DefaultRootWindow(display);
     screen = DefaultScreen(display);
@@ -1763,88 +1724,86 @@ static void setup(void) {
     client_manage_focus(NULL);
 
     /* ewmh supported atoms */
-    utf8string                              = XInternAtom(display, "UTF8_STRING", False);
-    net_atom[NetSupported]                  = XInternAtom(display, "_NET_SUPPORTED", False);
-    net_atom[NetNumberOfDesktops]           = XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS", False);
-    net_atom[NetActiveWindow]               = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
-    net_atom[NetWMStateFullscreen]          = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
-    net_atom[NetWMMoveResize]               = XInternAtom(display, "_NET_WM_MOVERESIZE", False);
-    net_atom[NetWMCheck]                    = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
-    net_atom[NetCurrentDesktop]             = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
-    net_atom[NetWMState]                    = XInternAtom(display, "_NET_WM_STATE", False);
-    net_atom[NetWMStateMaximizedVert]       = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_VERT", False);
-    net_atom[NetWMStateMaximizedHorz]       = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
-    net_atom[NetWMName]                     = XInternAtom(display, "_NET_WM_NAME", False);
-    net_atom[NetClientList]                 = XInternAtom(display, "_NET_CLIENT_LIST", False);
-    net_atom[NetWMWindowType]               = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
-    net_atom[NetWMWindowTypeDock]           = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", False);
-    net_atom[NetWMWindowTypeToolbar]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
-    net_atom[NetWMWindowTypeMenu]           = XInternAtom(display, "_NET_WM_WINDOW_TYPE_MENU", False);
-    net_atom[NetWMWindowTypeSplash]         = XInternAtom(display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
-    net_atom[NetWMWindowTypeDialog]         = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
-    net_atom[NetWMWindowTypeUtility]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
-    net_atom[NetWMWindowTypePopupMenu]      = XInternAtom(display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
-    net_atom[NetWMWindowTypeDropdownMenu]   = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);  
-    net_atom[NetWMWindowTypeTooltip]        = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLIP", False);
-    net_atom[NetWMWindowTypeNotification]   = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
-    net_atom[NetWMWindowTypeCombo]          = XInternAtom(display, "_NET_WM_WINDOW_TYPE_COMBO", False);
-    net_atom[NetWMWindowTypeDND]            = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DND", False);
-    net_atom[NetWMDesktop]                  = XInternAtom(display, "_NET_WM_DESKTOP", False);
-    net_atom[NetWMFrameExtents]             = XInternAtom(display, "_NET_FRAME_EXTENTS", False);
-    net_atom[NetDesktopNames]               = XInternAtom(display, "_NET_DESKTOP_NAMES", False);
-    net_atom[NetDesktopViewport]            = XInternAtom(display, "_NET_DESKTOP_VIEWPORT", False);
-    net_atom[NetWMStrut]                    = XInternAtom(display, "_NET_WM_STRUT", False);
-    net_atom[NetWMStrutPartial]             = XInternAtom(display, "_NET_WM_STRUT_PARTIAL", False);
+    utf8string = XInternAtom(display, "UTF8_STRING", False);
+    net_atom[NetSupported] = XInternAtom(display, "_NET_SUPPORTED", False);
+    net_atom[NetNumberOfDesktops] = XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS", False);
+    net_atom[NetActiveWindow] = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
+    net_atom[NetWMStateFullscreen] = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
+    net_atom[NetWMMoveResize] = XInternAtom(display, "_NET_WM_MOVERESIZE", False);
+    net_atom[NetWMCheck] = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
+    net_atom[NetCurrentDesktop] = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
+    net_atom[NetWMState] = XInternAtom(display, "_NET_WM_STATE", False);
+    net_atom[NetWMStateMaximizedVert] = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_VERT", False);
+    net_atom[NetWMStateMaximizedHorz] = XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_HORZ", False);
+    net_atom[NetWMName] = XInternAtom(display, "_NET_WM_NAME", False);
+    net_atom[NetClientList] = XInternAtom(display, "_NET_CLIENT_LIST", False);
+    net_atom[NetWMWindowType] = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
+    net_atom[NetWMWindowTypeDock] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", False);
+    net_atom[NetWMWindowTypeToolbar] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLBAR", False);
+    net_atom[NetWMWindowTypeMenu] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_MENU", False);
+    net_atom[NetWMWindowTypeSplash] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_SPLASH", False);
+    net_atom[NetWMWindowTypeDialog] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+    net_atom[NetWMWindowTypeUtility] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_UTILITY", False);
+    net_atom[NetWMWindowTypePopupMenu] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_POPUP_MENU", False);
+    net_atom[NetWMWindowTypeDropdownMenu] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DROPDOWN_MENU", False);
+    net_atom[NetWMWindowTypeTooltip] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_TOOLIP", False);
+    net_atom[NetWMWindowTypeNotification] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+    net_atom[NetWMWindowTypeCombo] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_COMBO", False);
+    net_atom[NetWMWindowTypeDND] = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DND", False);
+    net_atom[NetWMDesktop] = XInternAtom(display, "_NET_WM_DESKTOP", False);
+    net_atom[NetWMFrameExtents] = XInternAtom(display, "_NET_FRAME_EXTENTS", False);
+    net_atom[NetDesktopNames] = XInternAtom(display, "_NET_DESKTOP_NAMES", False);
+    net_atom[NetDesktopViewport] = XInternAtom(display, "_NET_DESKTOP_VIEWPORT", False);
+    net_atom[NetWMStrut] = XInternAtom(display, "_NET_WM_STRUT", False);
+    net_atom[NetWMStrutPartial] = XInternAtom(display, "_NET_WM_STRUT_PARTIAL", False);
 
     /* Some icccm atoms */
-    wm_atom[WMDeleteWindow]          = XInternAtom(display, "WM_DELETE_WINDOW", False);
-    wm_atom[WMTakeFocus]             = XInternAtom(display, "WM_TAKE_FOCUS", False);
-    wm_atom[WMProtocols]             = XInternAtom(display, "WM_PROTOCOLS", False);
-    wm_atom[WMChangeState]           = XInternAtom(display, "WM_CHANGE_STATE", False);
-    wm_atom[WMMotifHints]            = XInternAtom(display, "_MOTIF_WM_HINTS", False);
+    wm_atom[WMDeleteWindow] = XInternAtom(display, "WM_DELETE_WINDOW", False);
+    wm_atom[WMTakeFocus] = XInternAtom(display, "WM_TAKE_FOCUS", False);
+    wm_atom[WMProtocols] = XInternAtom(display, "WM_PROTOCOLS", False);
+    wm_atom[WMChangeState] = XInternAtom(display, "WM_CHANGE_STATE", False);
+    wm_atom[WMMotifHints] = XInternAtom(display, "_MOTIF_WM_HINTS", False);
 
     /* Internal berry atoms */
-    net_berry[BerryWindowConfig]     = XInternAtom(display, "BERRY_WINDOW_CONFIG", False);
+    net_berry[BerryWindowConfig] = XInternAtom(display, "BERRY_WINDOW_CONFIG", False);
 
     LOGN("Successfully assigned atoms");
 
-    XChangeProperty(display , check , net_atom[NetWMCheck]   , XA_WINDOW  , 32 , PropModeReplace , (unsigned char *) &check              , 1);
-    XChangeProperty(display , check , net_atom[NetWMName]    , utf8string , 8  , PropModeReplace , (unsigned char *) __WINDOW_MANAGER_NAME__ , 5);
-    XChangeProperty(display , root  , net_atom[NetWMCheck]   , XA_WINDOW  , 32 , PropModeReplace , (unsigned char *) &check              , 1);
-    XChangeProperty(display , root  , net_atom[NetSupported] , XA_ATOM    , 32 , PropModeReplace , (unsigned char *) net_atom            , NetLast);
+    XChangeProperty(display, check, net_atom[NetWMCheck], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&check, 1);
+    XChangeProperty(display, check, net_atom[NetWMName], utf8string, 8, PropModeReplace, (unsigned char *)__WINDOW_MANAGER_NAME__, 5);
+    XChangeProperty(display, root, net_atom[NetWMCheck], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&check, 1);
+    XChangeProperty(display, root, net_atom[NetSupported], XA_ATOM, 32, PropModeReplace, (unsigned char *)net_atom, NetLast);
 
     LOGN("Successfully set initial properties");
 
     /* Set the total number of desktops */
     data[0] = WORKSPACE_NUMBER;
-    XChangeProperty(display, root, net_atom[NetNumberOfDesktops], XA_CARDINAL, 32, PropModeReplace, (unsigned char *) data, 1);
+    XChangeProperty(display, root, net_atom[NetNumberOfDesktops], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)data, 1);
 
     /* Set the intial "current desktop" to 0 */
     data2[0] = curr_ws;
-    XChangeProperty(display, root, net_atom[NetCurrentDesktop], XA_CARDINAL, 32, PropModeReplace, (unsigned char *) data2, 1);
+    XChangeProperty(display, root, net_atom[NetCurrentDesktop], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)data2, 1);
     LOGN("Setting up monitors");
     monitors_setup();
     LOGN("Successfully setup monitors");
     mon = ws_m_list[curr_ws];
     XWarpPointer(display, None, root, 0, 0, 0, 0,
-        m_list[mon].x + m_list[mon].width / 2,
-        m_list[mon].y + m_list[mon].height / 2);
+                 m_list[mon].x + m_list[mon].width / 2,
+                 m_list[mon].y + m_list[mon].height / 2);
 
     gc = XCreateGC(display, root, 0, 0);
 
     LOGN("Allocating color values");
     XftColorAllocName(display, DefaultVisual(display, screen), DefaultColormap(display, screen),
-            TEXT_FOCUS_COLOR, &xft_focus_color);
+                      TEXT_FOCUS_COLOR, &xft_focus_color);
     XftColorAllocName(display, DefaultVisual(display, screen), DefaultColormap(display, screen),
-            TEXT_UNFOCUS_COLOR, &xft_unfocus_color);
+                      TEXT_UNFOCUS_COLOR, &xft_unfocus_color);
 
     font = XftFontOpenName(display, screen, global_font);
     ewmh_set_desktop_names();
 }
 
-static void
-client_show(struct client *c)
-{
+static void client_show(struct client *c) {
     if (c->hidden) {
         LOGN("Showing client");
         client_move_absolute(c, c->x_hide, c->geom.y);
@@ -1868,15 +1827,12 @@ static void client_snap_right(struct client *c) {
     client_resize_absolute(c, m_list[mon].width / 2 - conf.right_gap - get_dec_width(c), m_list[mon].height - conf.top_gap - conf.bot_gap - get_dec_height(c));
 }
 
-static void
-switch_ws(int ws)
-{
+static void switch_ws(int ws) {
     if (curr_ws == ws)
         return;
-    for (int i = 0; i < WORKSPACE_NUMBER; i++)
-    {
+    for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         if (i != ws && ws_m_list[i] == ws_m_list[ws]) {
-        /*if (i != ws) {*/
+            /*if (i != ws) {*/
             for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
                 client_hide(tmp);
                 LOGN("Hiding client...");
@@ -1892,12 +1848,12 @@ switch_ws(int ws)
             }
 
             if (count != 0) {
-                Window wins[count*2];
+                Window wins[count * 2];
                 j = 0;
 
                 for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
                     wins[j] = tmp->window;
-                    wins[j+1] = tmp->dec;
+                    wins[j + 1] = tmp->dec;
                     j += 2;
                 }
 
@@ -1912,9 +1868,7 @@ switch_ws(int ws)
     ewmh_set_active_desktop(ws);
 }
 
-static void
-warp_pointer(struct client *c)
-{
+static void warp_pointer(struct client *c) {
     XWarpPointer(display, None, c->dec, 0, 0, 0, 0, c->geom.width / 2, c->geom.height / 2);
 }
 
@@ -1927,31 +1881,28 @@ static void client_toggle_decorations(struct client *c) {
 
 static void ewmh_set_fullscreen(struct client *c, bool fullscreen) {
     XChangeProperty(display, c->window, net_atom[NetWMState], XA_ATOM, 32,
-            PropModeReplace, (unsigned char *)&net_atom[NetWMStateFullscreen], fullscreen ? 1 : 0 );
+                    PropModeReplace, (unsigned char *)&net_atom[NetWMStateFullscreen], fullscreen ? 1 : 0);
 }
 
 static void ewmh_set_viewport(void) {
     unsigned long data[2] = { 0, 0 };
-    XChangeProperty(display, root, net_atom[NetDesktopViewport], XA_CARDINAL, 32, PropModeReplace, (unsigned char*)&data, 2);
+    XChangeProperty(display, root, net_atom[NetDesktopViewport], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&data, 2);
 }
 
 static void ewmh_set_focus(struct client *c) {
-        XDeleteProperty(display, root, net_atom[NetActiveWindow]);
-        /* Tell EWMH about our new window */
-        XChangeProperty(display, root, net_atom[NetActiveWindow], XA_WINDOW, 32, PropModeReplace, (unsigned char *) &(c->window), 1);
+    XDeleteProperty(display, root, net_atom[NetActiveWindow]);
+    /* Tell EWMH about our new window */
+    XChangeProperty(display, root, net_atom[NetActiveWindow], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&(c->window), 1);
 }
 
-static void
-ewmh_set_desktop(struct client *c, int ws)
-{
+static void ewmh_set_desktop(struct client *c, int ws) {
     unsigned long data[1];
     data[0] = ws;
     XChangeProperty(display, c->window, net_atom[NetWMDesktop],
-            XA_CARDINAL, 32, PropModeReplace, (unsigned char *) data, 1);
+                    XA_CARDINAL, 32, PropModeReplace, (unsigned char *)data, 1);
 }
 
-static void ewmh_set_frame_extents(struct client *c)
-{
+static void ewmh_set_frame_extents(struct client *c) {
     unsigned long data[4];
     int left, right, top, bottom;
     LOGN("Setting client frame extents");
@@ -1970,7 +1921,7 @@ static void ewmh_set_frame_extents(struct client *c)
     data[2] = top;
     data[3] = bottom;
     XChangeProperty(display, c->window, net_atom[NetWMFrameExtents],
-            XA_CARDINAL, 32, PropModeReplace, (unsigned char *) data, 4);
+                    XA_CARDINAL, 32, PropModeReplace, (unsigned char *)data, 4);
 }
 
 static void ewmh_set_client_list(void) {
@@ -1979,7 +1930,7 @@ static void ewmh_set_client_list(void) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++)
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next)
             XChangeProperty(display, root, net_atom[NetClientList], XA_WINDOW, 32, PropModeAppend,
-                    (unsigned char *) &(tmp->window), 1);
+                            (unsigned char *)&(tmp->window), 1);
 }
 
 static Bool window_is_undecorated(Window window) {
@@ -1988,7 +1939,7 @@ static Bool window_is_undecorated(Window window) {
     unsigned long nitems;
     unsigned long bytes_after;
     unsigned char *prop = NULL;
-    if (XGetWindowProperty(display, window, wm_atom[WMMotifHints], 0, sizeof(MotifWmHints)/sizeof(long),
+    if (XGetWindowProperty(display, window, wm_atom[WMMotifHints], 0, sizeof(MotifWmHints) / sizeof(long),
                            False, AnyPropertyType, &actual_type, &actual_format,
                            &nitems, &bytes_after, &prop) == Success) {
         if (prop) {
@@ -2017,18 +1968,18 @@ static void window_find_struts() {
         return;
     }
 
-    unsigned int max_struts[4] = {0, 0, 0, 0};
+    unsigned int max_struts[4] = { 0, 0, 0, 0 };
 
     for (unsigned int i = 0; i < child_count; i++) {
         unsigned long *struts = NULL;
         Window window = children[i];
         // try to get _NET_WM_STRUT_PARTIAL first, otherwise _NET_WM_STRUT according to spec
         if (XGetWindowProperty(display, window, net_atom[NetWMStrutPartial], 0, 12,
-                                False, AnyPropertyType, &actual_type, &actual_format,
-                                &nitems, &bytes_after, (unsigned long *)&struts) != Success) {
+                               False, AnyPropertyType, &actual_type, &actual_format,
+                               &nitems, &bytes_after, (unsigned long *)&struts) != Success) {
             XGetWindowProperty(display, window, net_atom[NetWMStrut], 0, 4,
-                                False, AnyPropertyType, &actual_type, &actual_format,
-                                &nitems, &bytes_after, (unsigned long *)&struts);
+                               False, AnyPropertyType, &actual_type, &actual_format,
+                               &nitems, &bytes_after, (unsigned long *)&struts);
         }
 
         if (struts && actual_type == XA_CARDINAL && actual_format == 32 && nitems >= 4) {
@@ -2051,14 +2002,13 @@ static void window_find_struts() {
 }
 
 /*
-* Create and populate the values for _NET_DESKTOP_NAMES,
-* used by applications such as polybar for named workspaces.
-* By default, set the name of each workspaces to simply be the
-* index of that workspace.
-*/
-static void ewmh_set_desktop_names(void)
-{
-    char** list = calloc(WORKSPACE_NUMBER, sizeof(char*));
+ * Create and populate the values for _NET_DESKTOP_NAMES,
+ * used by applications such as polybar for named workspaces.
+ * By default, set the name of each workspaces to simply be the
+ * index of that workspace.
+ */
+static void ewmh_set_desktop_names(void) {
+    char **list = calloc(WORKSPACE_NUMBER, sizeof(char *));
     for (int i = 0; i < WORKSPACE_NUMBER; i++)
         asprintf(&list[i], "%d", i);
     XTextProperty text_prop;
@@ -2070,45 +2020,38 @@ static void ewmh_set_desktop_names(void)
     free(list);
 }
 
-static void
-ewmh_set_active_desktop(int ws)
-{
+static void ewmh_set_active_desktop(int ws) {
     unsigned long data[1];
     data[0] = ws;
     XChangeProperty(display, root, net_atom[NetCurrentDesktop], XA_CARDINAL, 32,
-            PropModeReplace, (unsigned char *) data, 1);
+                    PropModeReplace, (unsigned char *)data, 1);
 }
 
-static void
-usage(void)
-{
+static void usage(void) {
     printf("Usage: berry [-h|-v|-c CONFIG_PATH]\n");
     exit(EXIT_SUCCESS);
 }
 
-static void
-version(void)
-{
+static void version(void) {
     printf("%s %s\n", __WINDOW_MANAGER_NAME__, __THIS_VERSION__);
     printf("Copyright (c) 2018 Joshua L Ervin\n");
     printf("Released under the MIT License\n");
     exit(EXIT_SUCCESS);
 }
 
-static int
-xerror(Display *dpy, XErrorEvent *e) {
+static int xerror(Display *dpy, XErrorEvent *e) {
     /* this is stolen verbatim from katriawm which stole it from dwm lol */
     if (e->error_code == BadWindow ||
-            (e->request_code == X_SetInputFocus && e->error_code == BadMatch) ||
-            (e->request_code == X_PolyText8 && e->error_code == BadDrawable) ||
-            (e->request_code == X_PolyFillRectangle && e->error_code == BadDrawable) ||
-            (e->request_code == X_PolySegment && e->error_code == BadDrawable) ||
-            (e->request_code == X_ConfigureWindow && e->error_code == BadMatch) ||
-            (e->request_code == X_GrabButton && e->error_code == BadAccess) ||
-            (e->request_code == X_GrabKey && e->error_code == BadAccess) ||
-            (e->request_code == X_CopyArea && e->error_code == BadDrawable) ||
-            (e->request_code == 139 && e->error_code == BadDrawable) ||
-            (e->request_code == 139 && e->error_code == 143)) {
+        (e->request_code == X_SetInputFocus && e->error_code == BadMatch) ||
+        (e->request_code == X_PolyText8 && e->error_code == BadDrawable) ||
+        (e->request_code == X_PolyFillRectangle && e->error_code == BadDrawable) ||
+        (e->request_code == X_PolySegment && e->error_code == BadDrawable) ||
+        (e->request_code == X_ConfigureWindow && e->error_code == BadMatch) ||
+        (e->request_code == X_GrabButton && e->error_code == BadAccess) ||
+        (e->request_code == X_GrabKey && e->error_code == BadAccess) ||
+        (e->request_code == X_CopyArea && e->error_code == BadDrawable) ||
+        (e->request_code == 139 && e->error_code == BadDrawable) ||
+        (e->request_code == 139 && e->error_code == 143)) {
         LOGN("Ignoring XErrorEvent.");
         return 0;
     }
@@ -2205,12 +2148,12 @@ static Bool check_running() {
     Atom check_atom = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
 
     if (Success != XGetWindowProperty(display, check_root, check_atom, 0, (~0L), False, XA_WINDOW, &actual_type,
-                            &actual_format, &nitems, &bytes_after, &prop_return)) {
+                                      &actual_format, &nitems, &bytes_after, &prop_return)) {
         return False;
     }
 
     if (actual_type == XA_WINDOW) {
-        check_child = *(Window*)prop_return;
+        check_child = *(Window *)prop_return;
     }
 
     XFree(prop_return);
@@ -2221,8 +2164,8 @@ static Bool check_running() {
 
     Bool result = False;
     if (Success == XGetWindowProperty(display, check_child, prop, 0, (~0L), False, type, &actual_type,
-                            &actual_format, &nitems, &bytes_after, &prop_return))  {
-        if (actual_type == type && 0 == strcmp(__WINDOW_MANAGER_NAME__, (char*)prop_return)) {
+                                      &actual_format, &nitems, &bytes_after, &prop_return)) {
+        if (actual_type == type && 0 == strcmp(__WINDOW_MANAGER_NAME__, (char *)prop_return)) {
             result = True;
         }
 
@@ -2272,7 +2215,7 @@ static void update_config(unsigned int offset, unsigned int value) {
     for (int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
         if (setters[i].offset == offset) {
             LOGP("setting %s to %u (0x%x)", setters[i].key, value, value);
-            unsigned int * setting = (unsigned int*)((char*)&conf + setters[i].offset);
+            unsigned int *setting = (unsigned int *)((char *)&conf + setters[i].offset);
             *setting = value;
             refresh_config();
             return;
@@ -2292,21 +2235,21 @@ int main(int argc, char *argv[]) {
 
     while ((opt = getopt(argc, argv, "dhf:vc:")) != -1) {
         switch (opt) {
-            case 'h':
-                usage();
-                break;
-            case 'f':
-                snprintf(font_name, MAXLEN * sizeof(char), "%s", optarg);
-                break;
-            case 'c':
-                snprintf(conf_path, MAXLEN * sizeof(char), "%s", optarg);
-                break;
-            case 'v':
-                version();
-                break;
-            case 'd':
-                debug = true;
-                break;
+        case 'h':
+            usage();
+            break;
+        case 'f':
+            snprintf(font_name, MAXLEN * sizeof(char), "%s", optarg);
+            break;
+        case 'c':
+            snprintf(conf_path, MAXLEN * sizeof(char), "%s", optarg);
+            break;
+        case 'v':
+            version();
+            break;
+        case 'd':
+            debug = true;
+            break;
         }
     }
 
@@ -2317,7 +2260,7 @@ int main(int argc, char *argv[]) {
 
     if (check_running()) {
         printf("berry is running; sending config\n");
-        if (argc < 3)  {
+        if (argc < 3) {
             printf("berry <setting> <value>\n");
             exit(EXIT_FAILURE);
         }
@@ -2335,7 +2278,7 @@ int main(int argc, char *argv[]) {
             char *home = getenv("HOME");
             if (home == NULL) {
                 LOGN("Warning $XDG_CONFIG_HOME and $HOME not found"
-                        "autostart will not be loaded.\n");
+                     "autostart will not be loaded.\n");
                 conf_found = false;
             }
             snprintf(conf_path, MAXLEN * sizeof(char), "%s/%s/%s", home, ".config", BERRY_AUTOSTART);
