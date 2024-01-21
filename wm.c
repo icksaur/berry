@@ -413,11 +413,7 @@ static void client_delete(struct client *c) {
 
     // need to focus a new window
     if (f_client == c)
-        f_client = next ? next : f_list;
-        
-    if (f_client) {
-        client_move_to_front(f_client);
-    }
+        f_client = nofocus;
 
     client_manage_focus(f_client);
 
@@ -609,7 +605,7 @@ handle_key_press(XEvent *e) {
     switch (keysym) {
         case XK_Super_L: super_l_only_pressed = true; break;
         case XK_Super_R: super_r_only_pressed = true; break;
-    }
+    }  
 
     if (ev->state & Mod4Mask) {
         for (long unsigned int i = 0; i < num_launchers; i++) {
@@ -626,13 +622,6 @@ handle_key_press(XEvent *e) {
                 return;
             }
         }
-    } else if (ev->state == 0) {
-        for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
-            if (nomod_launchers[i].keysym == keysym && nomod_launchers[i].file) {
-                spawn(nomod_launchers[i].file, nomod_launchers[i].argv);
-                return;
-            }
-        }
     } else if (ev->keycode == tab_keycode) {
         if (!alt_tabbing) {
             alt_tabbing = true;
@@ -642,10 +631,16 @@ handle_key_press(XEvent *e) {
         }
         focus_next(f_client);
         return;
+    } else {
+        for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
+            if (nomod_launchers[i].keysym == keysym && nomod_launchers[i].file) {
+                spawn(nomod_launchers[i].file, nomod_launchers[i].argv);
+                return;
+            }
+        }
     }
     
-    if (f_client)
-    {
+    if (f_client) {
         XKeyEvent new_event = (*ev);
         new_event.window = f_client->window;
         XSendEvent(display, f_client->window, False, KeyPressMask, (XEvent *)&new_event);
@@ -1765,8 +1760,8 @@ static void setup(void) {
     }
 
     for (long unsigned int i = 0; i < num_shortcuts; i++) {
-        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), 0, root);
-        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), 0, nofocus);
+        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, root);
+        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, nofocus);
     }
 
     LOGN("selected root input");
