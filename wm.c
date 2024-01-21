@@ -152,6 +152,7 @@ static void feature_toggle(struct client *);
 static void send_config(const char *key, const char *value);
 static void update_config(unsigned int offset, unsigned int value);
 static void suppress_super_tap(void);
+static void toggle_hide_all(struct client *);
 
 static Bool window_is_undecorated(Window window);
 static void window_find_struts(void);
@@ -207,7 +208,6 @@ typedef struct {
 
 static const launcher launchers[] = {
     {XK_Return, "kitty", NULL},
-    {XK_e, "echo ", (char *const[]){"hello", "there", NULL}},
     {XK_Escape, "xfce4-taskmanager", NULL},
     {XK_l, "slock", NULL},
 };
@@ -223,6 +223,7 @@ static const shortcut shortcuts[] = {
     {XK_Left, client_snap_left},
     {XK_Right, client_snap_right},
     {XK_KP_Add, feature_toggle},
+    {XK_d, toggle_hide_all},
 };
 
 static const launcher nomod_launchers[] = {
@@ -387,8 +388,6 @@ static void client_delete(struct client *c) {
         return;
     }
 
-    struct client *next = c->f_next;
-
     // delete in client list
     if (c_list[ws] == c) {
         c_list[ws] = c_list[ws]->next;
@@ -401,10 +400,6 @@ static void client_delete(struct client *c) {
             tmp->next = tmp->next->next;
     }
 
-    if (c == f_client) {
-        f_client = c->f_next;
-    }
-
     // delete in focus list
     struct client **cur = &f_list[ws];
     while (*cur != c)
@@ -413,9 +408,7 @@ static void client_delete(struct client *c) {
 
     // need to focus a new window
     if (f_client == c)
-        f_client = nofocus;
-
-    client_manage_focus(f_client);
+        client_manage_focus(NULL);  
 
     ewmh_set_client_list();
 }
@@ -723,7 +716,9 @@ static void handle_button_press(XEvent *e) {
     c = get_client_from_window(child_return);
     if (c == NULL)
         return;
-    if (c != f_client) {
+
+    // change focus if we have a left-click event
+    if (bev->button == 1 && c != f_client) {
         switch_ws(c->ws);
         f_last_client = c; // prepare a focus item for LRU
         client_manage_focus(c);
@@ -782,7 +777,8 @@ static void handle_button_press(XEvent *e) {
                         if (ev.xbutton.subwindow == c->dec) {
                             suppress_super_tap();
                             client_hide(c);
-                            client_manage_focus(NULL);
+                            if (f_client == c)
+                                client_manage_focus(NULL);
                         }
                         break;
                 }
@@ -1165,13 +1161,11 @@ static void client_hide(struct client *c) {
         c->x_hide = c->geom.x;
         LOGN("Hiding client");
         client_move_absolute(c, display_width + 100, c->geom.y);
+        client_set_color(c, conf.iu_color, conf.bu_color);
         c->hidden = true;
     }
 
     client_update_state(c);
-    
-    // focusing the next window seems reasonable but need to make focus_next skip hidden windows in this case
-    // focus_next(c);
 }
 
 static void load_config(char *conf_path) {
@@ -1206,6 +1200,7 @@ static void client_manage_focus(struct client *c) {
         if (c->ws != curr_ws)
             switch_ws(c->ws);
 
+        f_client = c;
         reorder_focus();
     } else { // client is null, might happen when switching to a new workspace
       //  without any active clients
@@ -1637,14 +1632,10 @@ client_send_to_ws(struct client *c, int ws)
     ewmh_set_desktop(c, ws);
 }
 
-static void
-client_set_color(struct client *c, unsigned long i_color, unsigned long b_color)
-{
+static void client_set_color(struct client *c, unsigned long i_color, unsigned long b_color) {
     if (c->decorated) {
         XSetWindowBackground(display, c->dec, i_color);
         XSetWindowBorder(display, c->dec, b_color);
-        //XClearWindow(display, c->dec); // will cause flicker
-        //draw_text(c, c == f_client); //will be redrawn later anyhow
     }
 }
 
@@ -1946,7 +1937,6 @@ static void ewmh_set_viewport(void) {
 
 static void ewmh_set_focus(struct client *c) {
         XDeleteProperty(display, root, net_atom[NetActiveWindow]);
-        f_client = c;
         /* Tell EWMH about our new window */
         XChangeProperty(display, root, net_atom[NetActiveWindow], XA_WINDOW, 32, PropModeReplace, (unsigned char *) &(c->window), 1);
 }
@@ -2166,6 +2156,31 @@ int top_height(struct client *c) {
 
 static void feature_toggle(struct client *) {
     flight = !flight;
+}
+
+static void toggle_hide_all(struct client *) {
+    bool something_hid = false;
+    struct client *c = c_list[curr_ws];
+    unsigned int num_windows = 0;
+    while (c) {
+        if (!c->hidden) {
+            client_hide(c);
+            something_hid = true;
+        }
+        c = c->next;
+    }
+
+    if (something_hid) {
+        client_manage_focus(NULL);
+        return;
+    }
+
+    c = c_list[curr_ws];
+    while (c) {
+        client_show(c);
+        c = c->next;
+    }
+    client_manage_focus(NULL);
 }
 
 static void suppress_super_tap(void) {
