@@ -10,7 +10,7 @@
 
 #define DEFAULT_FONT "System-ui 12"
 
-#define WORKSPACE_NUMBER 1
+#define WORKSPACE_NUMBER 2
 
 #define BORDER_WIDTH 0
 #define INTERNAL_BORDER_WIDTH 4

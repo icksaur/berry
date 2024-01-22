@@ -614,6 +614,16 @@ static void handle_key_press(XEvent *e) {
                 return;
             }
         }
+        if (keysym >= XK_1 && keysym <= XK_9) {
+            if (keysym - XK_1 < WORKSPACE_NUMBER) {
+                if (ev->state & ShiftMask) {
+                    client_send_to_ws(f_client, keysym - XK_1);
+                } else {
+                    switch_ws(keysym - XK_1);
+                }
+            }
+            suppress_super_tap();
+        }
     } else if (ev->keycode == tab_keycode) {
         if (!alt_tabbing) {
             alt_tabbing = true;
@@ -1710,7 +1720,12 @@ static void setup(void) {
         grab_super_key(XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, nofocus);
     }
 
-    LOGN("selected root input");
+    for (int i = 0; i < WORKSPACE_NUMBER; i++) {
+        grab_super_key(XKeysymToKeycode(display, XK_1 + i), Mod4Mask, root);
+        grab_super_key(XKeysymToKeycode(display, XK_1 + i), Mod4Mask|ShiftMask, root);
+    }
+
+        LOGN("selected root input");
     xerrorxlib = XSetErrorHandler(xerror);
 
     XChangeWindowAttributes(display, nofocus, CWOverrideRedirect, &wa);
@@ -1826,39 +1841,32 @@ static void switch_ws(int ws) {
         return;
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         if (i != ws && ws_m_list[i] == ws_m_list[ws]) {
-            /*if (i != ws) {*/
             for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
+                // hide each client preserving the hidden status
+                int hidden = tmp->hidden;
                 client_hide(tmp);
-                LOGN("Hiding client...");
+                tmp->hidden = hidden;
             }
         } else if (i == ws) {
-            int count, j;
-            count = 0;
-
-            // how many active clients are on the current workspace
             for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
-                count++;
-                client_show(tmp);
-            }
-
-            if (count != 0) {
-                Window wins[count * 2];
-                j = 0;
-
-                for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
-                    wins[j] = tmp->window;
-                    wins[j + 1] = tmp->dec;
-                    j += 2;
+                // assume each client is hidden offscreen, and only show those without hidden set
+                if (!tmp->hidden) {
+                    tmp->hidden = true;
+                    client_show(tmp);
                 }
-
-                XRestackWindows(display, wins, count * 2);
             }
         }
     }
+
     curr_ws = ws;
     int mon = ws_m_list[ws];
     LOGP("Setting Screen #%d with active workspace %d", m_list[mon].screen, ws);
-    client_manage_focus(c_list[curr_ws]);
+    for (struct client * cur = f_list[curr_ws]; cur != NULL; cur = cur->f_next) {
+        if (!cur->hidden) {
+            client_manage_focus(f_list[curr_ws]);
+            break;
+        }
+    }
     ewmh_set_active_desktop(ws);
 }
 
