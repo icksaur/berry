@@ -92,7 +92,7 @@ static void client_show(struct client *c);
 static void client_snap_left(struct client *c);
 static void client_snap_right(struct client *c);
 static void client_toggle_decorations(struct client *c);
-static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y);
+static void client_try_drag(struct client *c, int is_move, int x, int y);
 static void client_update_state(struct client *c);
 
 /* EWMH functions */
@@ -181,19 +181,6 @@ typedef struct {
     size_t offset;
 } config_setter;
 
-#define CONFIG_VALUE(X) \
-    { #X, offsetof(struct config, X) }
-static config_setter setters[] = {
-    CONFIG_VALUE(bf_color),
-    CONFIG_VALUE(bu_color),
-    CONFIG_VALUE(if_color),
-    CONFIG_VALUE(iu_color),
-    CONFIG_VALUE(b_width),
-    CONFIG_VALUE(i_width),
-    CONFIG_VALUE(t_height),
-    CONFIG_VALUE(bottom_height),
-};
-
 typedef struct {
     unsigned int keysym;
     const char *file;
@@ -206,6 +193,27 @@ typedef struct {
     unsigned int keysym;
     client_function function;
 } shortcut;
+
+typedef struct {
+    unsigned long flags;
+    unsigned long functions;
+    unsigned long decorations;
+    long input_mode;
+    unsigned long status;
+} MotifWmHints;
+
+#define CONFIG_VALUE(X) \
+    { #X, offsetof(struct config, X) }
+static config_setter setters[] = {
+    CONFIG_VALUE(bf_color),
+    CONFIG_VALUE(bu_color),
+    CONFIG_VALUE(if_color),
+    CONFIG_VALUE(iu_color),
+    CONFIG_VALUE(b_width),
+    CONFIG_VALUE(i_width),
+    CONFIG_VALUE(t_height),
+    CONFIG_VALUE(bottom_height),
+};
 
 static const launcher launchers[] = {
     { XK_Return, "kitty", NULL },
@@ -241,14 +249,6 @@ static const int num_shortcuts = sizeof(shortcuts) / sizeof(shortcut);
 #define _NET_WM_STATE_REMOVE 0
 #define _NET_WM_STATE_ADD 1
 #define _NET_WM_STATE_TOGGLE 2
-
-typedef struct {
-    unsigned long flags;
-    unsigned long functions;
-    unsigned long decorations;
-    long input_mode;
-    unsigned long status;
-} MotifWmHints;
 
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
@@ -300,7 +300,7 @@ static void draw_text(struct client *c, bool focused) {
             break;
     }
 
-    if (extents.y > conf.t_height) {
+    if (extents.y > (short)conf.t_height) {
         LOGN("Text is taller than title bar height, not drawing text");
         return;
     }
@@ -493,10 +493,9 @@ static void focus_next(struct client *c) {
 static struct client *get_client_from_window(Window w) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
-            if (tmp->window == w)
+            if (tmp->window == w || tmp->dec == w) {
                 return tmp;
-            if (tmp->dec == w)
-                return tmp;
+            }
         }
     }
 
@@ -506,10 +505,9 @@ static struct client *get_client_from_window(Window w) {
 /* Redirect an XEvent from berry's client program, berryc */
 static void handle_client_message(XEvent *e) {
     XClientMessageEvent *cme = &e->xclient;
-    LOGP("e: message %d", cme->window);
-    long cmd, *data;
-    LOGP("client message is %lu", cme->message_type);
-    LOGP("message type name is %s", XGetAtomName(display, cme->message_type));
+    LOGP("message window 0x%x", (int)cme->window);
+    LOGP("client message type %lu", cme->message_type);
+    LOGP("message type name %s", XGetAtomName(display, cme->message_type));
     if (cme->message_type == net_atom[NetWMState]) {
         struct client *c = get_client_from_window(cme->window);
         if (c == NULL) {
@@ -562,16 +560,15 @@ static void handle_client_message(XEvent *e) {
         if (c == NULL)
             return;
 
-        data = cme->data.l;
         long direction = cme->data.l[2];
         switch (direction) {
         case XCB_EWMH_WM_MOVERESIZE_MOVE:
-            client_try_drag(c, True, True, cme->data.l[0], cme->data.l[1]);
+            client_try_drag(c, True, cme->data.l[0], cme->data.l[1]);
             break;
         case XCB_EWMH_WM_MOVERESIZE_SIZE_RIGHT:
         case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOM:
         case XCB_EWMH_WM_MOVERESIZE_SIZE_BOTTOMRIGHT:
-            client_try_drag(c, True, False, cme->data.l[0], cme->data.l[1]);
+            client_try_drag(c, False, cme->data.l[0], cme->data.l[1]);
             break;
         }
     } else if (cme->message_type == wm_atom[WMChangeState]) {
@@ -603,14 +600,14 @@ static void handle_key_press(XEvent *e) {
     }
 
     if (ev->state & Mod4Mask) {
-        for (long unsigned int i = 0; i < num_launchers; i++) {
+        for (int i = 0; i < num_launchers; i++) {
             if (launchers[i].keysym == keysym && launchers[i].file) {
                 suppress_super_tap();
                 spawn(launchers[i].file, launchers[i].argv);
                 return;
             }
         }
-        for (long unsigned int i = 0; i < num_shortcuts; i++) {
+        for (int i = 0; i < num_shortcuts; i++) {
             if (shortcuts[i].keysym == keysym) {
                 suppress_super_tap();
                 (*(shortcuts[i].function))(f_client);
@@ -627,7 +624,7 @@ static void handle_key_press(XEvent *e) {
         focus_next(f_client);
         return;
     } else {
-        for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
+        for (int i = 0; i < num_nomod_launchers; i++) {
             if (nomod_launchers[i].keysym == keysym && nomod_launchers[i].file) {
                 spawn(nomod_launchers[i].file, nomod_launchers[i].argv);
                 return;
@@ -825,7 +822,7 @@ static void handle_button_press(XEvent *e) {
     XUngrabPointer(display, CurrentTime);
 }
 
-static void client_try_drag(struct client *c, int dragged, int is_move, int x, int y) {
+static void client_try_drag(struct client *c, int is_move, int x, int y) {
     XEvent ev;
     int nx, ny, ocx, ocy, nw, nh, ocw, och, rx, ry;
     unsigned int mask;
@@ -984,9 +981,6 @@ static void handle_configure_notify(XEvent *e) {
             // LOGP("configure for client override_redirect is %d", ev->override_redirect ? "True" : "False");
             if (ev->x != cx || ev->y != cy) {
                 // Some clients attempt to move themselves within the frame.  Move them back.
-                unsigned int cw = c->geom.width;
-                unsigned int ch = c->geom.height;
-                // LOGP("client moved in frame from %d,%d, moving to %d,%d w:%d h:%d", ev->x, ev->y, cx, cy, cw, ch);
                 XMoveResizeWindow(display, c->window, cx, cy, c->geom.width, c->geom.height);
             }
         }
@@ -1069,19 +1063,19 @@ static void handle_map_request(XEvent *e) {
 static void handle_destroy_notify(XEvent *e) {
     XDestroyWindowEvent *ev = &e->xdestroywindow;
     struct client *c = get_client_from_window(ev->window);
-    LOGP("e: destroy %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
+    LOGP("e: destroy %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 }
 
 static void handle_reparent_notify(XEvent *e) {
     XReparentEvent *ev = &e->xreparent;
     struct client *c = get_client_from_window(ev->window);
-    LOGP("e: reparent %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
+    LOGP("e: reparent %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 }
 
 static void handle_unmap_notify(XEvent *e) {
     XUnmapEvent *ev = &e->xunmap;
     struct client *c = get_client_from_window(ev->window);
-    LOGP("e: unmap %x (%s)", ev->window, c == NULL ? "other" : (ev->window, c->window == ev->window ? "client" : "decoration"));
+    LOGP("e: unmap %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 
     if (c == NULL) {
         /* Some applications *ahem* Spotify *ahem*, don't seem to place nicely with being deleted.
@@ -1193,9 +1187,9 @@ static void client_manage_focus(struct client *c) {
     }
 }
 
-static void grab_button_modifiers(Display *display, unsigned int button, unsigned int modifiers, Window window) {
+static void grab_button_modifiers(unsigned int button, unsigned int modifiers, Window window) {
     unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
-    for (int i = 0; i < sizeof(modmasks) / sizeof(modmasks[0]); i++) {
+    for (unsigned long i = 0; i < sizeof(modmasks) / sizeof(modmasks[0]); i++) {
         XGrabButton(display, button, modifiers | modmasks[i], window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
     }
 }
@@ -1281,8 +1275,8 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
 
     // intercept move mask clicks for managing the window, and single-click for focusing
     if (flight) {
-        grab_button_modifiers(display, AnyButton, MOVE_MASK, c->window);
-        grab_button_modifiers(display, AnyButton, 0, c->window);
+        grab_button_modifiers(AnyButton, MOVE_MASK, c->window);
+        grab_button_modifiers(AnyButton, 0, c->window);
     } else {
         XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
         XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
@@ -1633,9 +1627,9 @@ static void client_set_title(struct client *c) {
     XFree(tp.value);
 }
 
-static void grab_super_key(Display *display, int keycode, unsigned int modifiers, Window window) {
+static void grab_super_key(int keycode, unsigned int modifiers, Window window) {
     unsigned int modmasks[] = { 0, Mod2Mask, LockMask, Mod2Mask | LockMask };
-    for (int i = 0; i < sizeof(modmasks) / sizeof(modmasks[0]); i++) {
+    for (unsigned int i = 0; i < sizeof(modmasks) / sizeof(modmasks[0]); i++) {
         XGrabKey(display, keycode, modifiers | modmasks[i], window, True, GrabModeAsync, GrabModeAsync);
     }
 }
@@ -1701,19 +1695,19 @@ static void setup(void) {
     XGrabKey(display, super_l_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, super_r_keycode, AnyModifier, root, True, GrabModeAsync, GrabModeAsync);
 
-    for (long unsigned int i = 0; i < num_launchers; i++) {
-        grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root);
-        grab_super_key(display, XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus);
+    for (int i = 0; i < num_launchers; i++) {
+        grab_super_key(XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, root);
+        grab_super_key(XKeysymToKeycode(display, launchers[i].keysym), Mod4Mask, nofocus);
     }
 
-    for (long unsigned int i = 0; i < num_nomod_launchers; i++) {
-        grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, root);
-        grab_super_key(display, XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, nofocus);
+    for (int i = 0; i < num_nomod_launchers; i++) {
+        grab_super_key(XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, root);
+        grab_super_key(XKeysymToKeycode(display, nomod_launchers[i].keysym), 0, nofocus);
     }
 
-    for (long unsigned int i = 0; i < num_shortcuts; i++) {
-        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, root);
-        grab_super_key(display, XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, nofocus);
+    for (int i = 0; i < num_shortcuts; i++) {
+        grab_super_key(XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, root);
+        grab_super_key(XKeysymToKeycode(display, shortcuts[i].keysym), Mod4Mask, nofocus);
     }
 
     LOGN("selected root input");
@@ -1958,10 +1952,11 @@ static Bool window_is_undecorated(Window window) {
 #define REMOVE_EQ(X, Y) X = (X == Y ? 0 : X)
 
 // find all windows that advertise WM_STRUTS and calculate the largest border gaps
-static void window_find_struts() {
+static void window_find_struts(void) {
     Window *children, root_return, parent_return;
-    unsigned int child_count, actual_format;
+    int actual_format;
     unsigned long nitems, bytes_after;
+    unsigned int child_count;
     Atom actual_type;
     if (False == XQueryTree(display, root, &root_return, &parent_return, &children, &child_count)) {
         LOGN("Failed to query tree to find struts");
@@ -1976,10 +1971,10 @@ static void window_find_struts() {
         // try to get _NET_WM_STRUT_PARTIAL first, otherwise _NET_WM_STRUT according to spec
         if (XGetWindowProperty(display, window, net_atom[NetWMStrutPartial], 0, 12,
                                False, AnyPropertyType, &actual_type, &actual_format,
-                               &nitems, &bytes_after, (unsigned long *)&struts) != Success) {
+                               &nitems, &bytes_after, (unsigned char **)&struts) != Success) {
             XGetWindowProperty(display, window, net_atom[NetWMStrut], 0, 4,
                                False, AnyPropertyType, &actual_type, &actual_format,
-                               &nitems, &bytes_after, (unsigned long *)&struts);
+                               &nitems, &bytes_after, (unsigned char **)&struts);
         }
 
         if (struts && actual_type == XA_CARDINAL && actual_format == 32 && nitems >= 4) {
@@ -2097,14 +2092,15 @@ int top_height(struct client *c) {
     return c->decorated ? (conf.t_height + conf.i_width) : 0;
 }
 
-static void feature_toggle(struct client *) {
+static void feature_toggle(struct client *c) {
+    UNUSED(c);
     flight = !flight;
 }
 
-static void toggle_hide_all(struct client *) {
+static void toggle_hide_all(struct client *_c) {
+    UNUSED(_c);
     bool something_hid = false;
     struct client *c = c_list[curr_ws];
-    unsigned int num_windows = 0;
     while (c) {
         if (!c->hidden) {
             client_hide(c);
@@ -2130,19 +2126,18 @@ static void suppress_super_tap(void) {
     super_l_only_pressed = super_r_only_pressed = false;
 }
 
-static Bool check_running() {
+static Bool check_running(void) {
     Window check_root = DefaultRootWindow(display);
     if (!check_root) {
         return False;
     }
 
     unsigned char *prop_return = NULL;
-    Window *child_return = NULL;
     Atom actual_type;
     int actual_format;
     unsigned long nitems;
     unsigned long bytes_after;
-    Window check_child = NULL;
+    Window check_child = 0;
     Atom prop = XInternAtom(display, "_NET_WM_NAME", False);
     Atom type = XInternAtom(display, "UTF8_STRING", False);
     Atom check_atom = XInternAtom(display, "_NET_SUPPORTING_WM_CHECK", False);
@@ -2176,17 +2171,17 @@ static Bool check_running() {
 }
 
 static void send_config(const char *key, const char *value) {
-    for (int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
+    for (unsigned int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
         if (0 == strcmp(key, setters[i].key)) {
             char *endptr;
-            unsigned int ui_value = strtoul(value, &endptr, 16);
-            if (endptr == '\0') {
+            unsigned long ui_value = strtoul(value, &endptr, 16);
+            if (endptr == value || ui_value == ULONG_MAX || *endptr != '\0') {
                 printf("could not parse %s as an unsigned integer\n", value);
                 return;
             }
 
             Window local_root = DefaultRootWindow(display);
-            printf("send %s = 0x%x to window 0x%x\n", key, ui_value, local_root);
+            printf("send %s = 0x%x to window 0x%x\n", key, (int)ui_value, (int)local_root);
 
             XClientMessageEvent cev;
             memset(&cev, 0, sizeof(XClientMessageEvent));
@@ -2199,20 +2194,20 @@ static void send_config(const char *key, const char *value) {
             cev.data.l[0] = setters[i].offset;
             cev.data.l[1] = ui_value;
             cev.format = 32;
-            if (XSendEvent(display, local_root, False, SubstructureRedirectMask, &cev)) {
-                printf("sent message to window 0x%x\n", local_root);
+            if (XSendEvent(display, local_root, False, SubstructureRedirectMask, (XEvent*)&cev)) {
+                printf("sent message to window 0x%x\n", (int)local_root);
             } else {
-                printf("failed to send message to window 0x%x\n", local_root);
+                printf("failed to send message to window 0x%x\n", (int)local_root);
             }
             return;
         }
     }
 
-    printf("no config found for key %s\n");
+    printf("no config found for key %s\n", key);
 }
 
 static void update_config(unsigned int offset, unsigned int value) {
-    for (int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
+    for (unsigned int i = 0; i < sizeof(setters) / sizeof(config_setter); i++) {
         if (setters[i].offset == offset) {
             LOGP("setting %s to %u (0x%x)", setters[i].key, value, value);
             unsigned int *setting = (unsigned int *)((char *)&conf + setters[i].offset);
