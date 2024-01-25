@@ -27,10 +27,10 @@
 #include "types.h"
 #include "utils.h"
 
-static struct client *f_client = NULL;          /* focused client */
-static struct client *f_last_client = NULL;     /* previously focused client */
-static struct client *c_list[WORKSPACE_NUMBER]; /* 'stack' of managed clients in drawing order */
-static struct client *f_list[WORKSPACE_NUMBER]; /* ordered lists for clients to be focused */
+static client *f_client = NULL;          /* focused client */
+static client *f_last_client = NULL;     /* previously focused client */
+static client *c_list[WORKSPACE_NUMBER]; /* 'stack' of managed clients in drawing order */
+static client *f_list[WORKSPACE_NUMBER]; /* ordered lists for clients to be focused */
 static struct monitor *m_list = NULL;           /* All saved monitors */
 static struct config conf;                      /* gloabl config */
 static int ws_m_list[WORKSPACE_NUMBER];         /* Mapping from workspaces to associated monitors */
@@ -62,45 +62,45 @@ static unsigned int flight = True;
 /* All functions */
 
 /* Client management functions */
-static void client_center(struct client *c);
-static void client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h);
-static void client_close(struct client *c);
-static void client_decorations_create(struct client *cm);
-static void client_decorations_show(struct client *c);
-static void client_decorations_destroy(struct client *c);
-static void client_delete(struct client *c);
-static void client_toggle_fullscreen(struct client *c);
-static void client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max);
-static void client_hide(struct client *c);
-static void client_manage_focus(struct client *c);
-static void client_move_absolute(struct client *c, int x, int y);
-static void client_move_relative(struct client *c, int x, int y);
-static void client_notify_move(struct client *c);
-static void client_move_to_front(struct client *c);
-static void client_monocle(struct client *c);
-static void client_place(struct client *c);
-static void client_raise(struct client *c);
-static void client_refresh(struct client *c);
-static void client_resize_absolute(struct client *c, int w, int h);
-static void client_resize_relative(struct client *c, int w, int h);
-static void client_save(struct client *c, int ws);
-static void client_send_to_ws(struct client *c, int ws);
-static void client_set_color(struct client *c, unsigned long i_color, unsigned long b_color);
-static void client_set_input(struct client *c);
-static void client_set_title(struct client *c);
-static void client_show(struct client *c);
-static void client_snap_left(struct client *c);
-static void client_snap_right(struct client *c);
-static void client_toggle_decorations(struct client *c);
-static void client_try_drag(struct client *c, int is_move, int x, int y);
-static void client_update_state(struct client *c);
+static void client_center(client *c);
+static void client_center_in_rect(client *c, int x, int y, unsigned w, unsigned h);
+static void client_close(client *c);
+static void client_decorations_create(client *cm);
+static void client_decorations_show(client *c);
+static void client_decorations_destroy(client *c);
+static void client_delete(client *c);
+static void client_toggle_fullscreen(client *c);
+static void client_fullscreen(client *c, bool toggle, bool fullscreen, bool max);
+static void client_hide(client *c);
+static void client_manage_focus(client *c);
+static void client_move_absolute(client *c, int x, int y);
+static void client_move_relative(client *c, int x, int y);
+static void client_notify_move(client *c);
+static void client_move_to_front(client *c);
+static void client_monocle(client *c);
+static void client_place(client *c);
+static void client_raise(client *c);
+static void client_refresh(client *c);
+static void client_resize_absolute(client *c, int w, int h);
+static void client_resize_relative(client *c, int w, int h);
+static void client_save(client *c, int ws);
+static void client_send_to_ws(client *c, int ws);
+static void client_set_color(client *c, unsigned long i_color, unsigned long b_color);
+static void client_set_input(client *c);
+static void client_set_title(client *c);
+static void client_show(client *c);
+static void client_snap_left(client *c);
+static void client_snap_right(client *c);
+static void client_toggle_decorations(client *c);
+static void client_try_drag(client *c, int is_move, int x, int y);
+static void client_update_state(client *c);
 
 /* EWMH functions */
-static void ewmh_set_fullscreen(struct client *c, bool fullscreen);
+static void ewmh_set_fullscreen(client *c, bool fullscreen);
 static void ewmh_set_viewport(void);
-static void ewmh_set_focus(struct client *c);
-static void ewmh_set_desktop(struct client *c, int ws);
-static void ewmh_set_frame_extents(struct client *c);
+static void ewmh_set_focus(client *c);
+static void ewmh_set_desktop(client *c, int ws);
+static void ewmh_set_frame_extents(client *c);
 static void ewmh_set_client_list(void);
 static void ewmh_set_desktop_names(void);
 static void ewmh_set_active_desktop(int ws);
@@ -125,34 +125,34 @@ static void monitors_free(void);
 static void monitors_setup(void);
 
 static void reorder_focus(void);
-static void draw_text(struct client *c, bool focused);
-static struct client *get_client_from_window(Window w);
+static void draw_text(client *c, bool focused);
+static client *get_client_from_window(Window w);
 static void load_config(char *conf_path);
 static void manage_new_window(Window w, XWindowAttributes *wa);
-static int manage_xsend_icccm(struct client *c, Atom atom);
+static int manage_xsend_icccm(client *c, Atom atom);
 static void spawn(const char *file, char *const *argv);
 static void refresh_config(void);
 static bool safe_to_focus(int ws);
 static void setup(void);
 static Bool check_running(void);
 static void switch_ws(int ws);
-static void warp_pointer(struct client *c);
+static void warp_pointer(client *c);
 static void usage(void);
 static void version(void);
 static int xerror(Display *display, XErrorEvent *e);
-static int get_actual_x(struct client *c);
-static int get_actual_y(struct client *c);
-static int get_actual_width(struct client *c);
-static int get_actual_height(struct client *c);
-static int get_dec_width(struct client *c);
-static int get_dec_height(struct client *c);
-static int left_width(struct client *c);
-static int top_height(struct client *c);
-static void feature_toggle(struct client *);
+static int get_actual_x(client *c);
+static int get_actual_y(client *c);
+static int get_actual_width(client *c);
+static int get_actual_height(client *c);
+static int get_dec_width(client *c);
+static int get_dec_height(client *c);
+static int left_width(client *c);
+static int top_height(client *c);
+static void feature_toggle(client *);
 static void send_config(const char *key, const char *value);
 static void update_config(unsigned int offset, unsigned int value);
 static void suppress_super_tap(void);
-static void toggle_hide_all(struct client *);
+static void toggle_hide_all(client *);
 
 static Bool window_is_undecorated(Window window);
 static void window_find_struts(void);
@@ -187,7 +187,7 @@ typedef struct {
     char *const *argv;
 } launcher;
 
-typedef void (*client_function)(struct client *);
+typedef void (*client_function)(client *);
 
 typedef struct {
     unsigned int keysym;
@@ -253,7 +253,7 @@ static const int num_shortcuts = sizeof(shortcuts) / sizeof(shortcut);
 /* Move a client to the center of the screen, centered vertically and horizontally
  * by the middle of the Client
  */
-static void client_center(struct client *c) {
+static void client_center(client *c) {
     int mon;
     LOGN("Centering Client");
     mon = ws_m_list[c->ws];
@@ -264,7 +264,7 @@ static int ceil10(int n) {
     return (n + 9) - (n + 9) % 10;
 }
 
-static void client_center_in_rect(struct client *c, int x, int y, unsigned w, unsigned h) {
+static void client_center_in_rect(client *c, int x, int y, unsigned w, unsigned h) {
     LOGP("Centering at x=%d, y=%d, w=%u, h=%u", x, y, w, h);
     int new_x = ceil10(x + (conf.left_gap - conf.right_gap) / 2 + w / 2 - c->geom.width / 2);
     int new_y = ceil10(y + (conf.top_gap - conf.bot_gap) / 2 + h / 2 - c->geom.height / 2);
@@ -274,7 +274,7 @@ static void client_center_in_rect(struct client *c, int x, int y, unsigned w, un
     client_refresh(c); // in case we went over the top gap
 }
 
-static void draw_text(struct client *c, bool focused) {
+static void draw_text(client *c, bool focused) {
     XftDraw *draw;
     XftColor *xft_render_color;
     XGlyphInfo extents;
@@ -318,14 +318,14 @@ static void draw_text(struct client *c, bool focused) {
 }
 
 // Try to close a window using soft close protocol.  If it's not supported, destroy the window.
-static void client_close(struct client *c) {
+static void client_close(client *c) {
     if (!manage_xsend_icccm(c, wm_atom[WMDeleteWindow])) {
         XDestroyWindow(display, c->window);
     }
 }
 
 // create decoration window
-static void client_decorations_create(struct client *c) {
+static void client_decorations_create(client *c) {
     int w = c->geom.width + get_dec_width(c);
     int h = c->geom.height + get_dec_height(c);
     int x = c->geom.x - left_width(c);
@@ -341,7 +341,7 @@ static void client_decorations_create(struct client *c) {
 }
 
 /* Create new "dummy" windows to be used as decorations for the given client */
-static void client_decorations_show(struct client *c) {
+static void client_decorations_show(client *c) {
     c->decorated = true;
     if (c->mono) {
         XMoveResizeWindow(display, c->window, left_width(c), top_height(c), c->geom.x - get_dec_width(c), c->geom.y - get_dec_height(c));
@@ -359,7 +359,7 @@ static void client_decorations_show(struct client *c) {
 }
 
 /* Destroy any "dummy" windows associated with the given Client as decorations */
-static void client_decorations_destroy(struct client *c) {
+static void client_decorations_destroy(client *c) {
     if (c->mono || c->fullscreen) {
         XMoveResizeWindow(display, c->window, 0, 0, get_actual_width(c), get_actual_height(c));
         c->geom.x -= left_width(c);
@@ -377,7 +377,7 @@ static void client_decorations_destroy(struct client *c) {
 /* Remove the given Client from the list of currently managed clients
  * Does not free the given client from memory.
  * */
-static void client_delete(struct client *c) {
+static void client_delete(client *c) {
     int ws;
     ws = c->ws;
 
@@ -390,7 +390,7 @@ static void client_delete(struct client *c) {
     if (c_list[ws] == c) {
         c_list[ws] = c_list[ws]->next;
     } else {
-        struct client *tmp = c_list[ws];
+        client *tmp = c_list[ws];
         while (tmp != NULL && tmp->next != c)
             tmp = tmp->next;
 
@@ -399,7 +399,7 @@ static void client_delete(struct client *c) {
     }
 
     // delete in focus list
-    struct client **cur = &f_list[ws];
+    client **cur = &f_list[ws];
     while (*cur != c)
         cur = &((*cur)->f_next);
     *cur = (*cur)->f_next;
@@ -416,7 +416,7 @@ static void monitors_free(void) {
     m_list = NULL;
 }
 
-static void client_toggle_fullscreen(struct client *c) {
+static void client_toggle_fullscreen(client *c) {
     client_fullscreen(c, true, true, true);
 }
 
@@ -424,7 +424,7 @@ static void client_toggle_fullscreen(struct client *c) {
  * of the given display.
  * Updates the value of _NET_WM_STATE_FULLSCREEN to reflect fullscreen changes
  */
-static void client_fullscreen(struct client *c, bool toggle, bool fullscreen, bool max) {
+static void client_fullscreen(client *c, bool toggle, bool fullscreen, bool max) {
     LOGP("fullscreen: toggle: %d fullscreen: %d, max: %d", toggle, fullscreen, max);
 
     int mon = ws_m_list[c->ws];
@@ -469,7 +469,7 @@ static void client_fullscreen(struct client *c, bool toggle, bool fullscreen, bo
 }
 
 // focus the next window in the focus list
-static void focus_next(struct client *c) {
+static void focus_next(client *c) {
     int ws = c != NULL ? c->ws : curr_ws;
     if (c == NULL) {
         c = f_list[ws];
@@ -484,15 +484,15 @@ static void focus_next(struct client *c) {
         return;
     }
 
-    struct client *tmp;
+    client *tmp;
     tmp = c->f_next == NULL ? f_list[ws] : c->f_next;
     client_manage_focus(tmp);
 }
 
-/* Returns the struct client associated with the given struct Window */
-static struct client *get_client_from_window(Window w) {
+// Returns the client associated with the given struct Window
+static client *get_client_from_window(Window w) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
-        for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
+        for (client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
             if (tmp->window == w || tmp->dec == w) {
                 return tmp;
             }
@@ -502,14 +502,14 @@ static struct client *get_client_from_window(Window w) {
     return NULL;
 }
 
-/* Redirect an XEvent from berry's client program, berryc */
+// Redirect an XEvent from berry's client program, berryc
 static void handle_client_message(XEvent *e) {
     XClientMessageEvent *cme = &e->xclient;
     LOGP("message window 0x%x", (int)cme->window);
     LOGP("client message type %lu", cme->message_type);
     LOGP("message type name %s", XGetAtomName(display, cme->message_type));
     if (cme->message_type == net_atom[NetWMState]) {
-        struct client *c = get_client_from_window(cme->window);
+        client *c = get_client_from_window(cme->window);
         if (c == NULL) {
             LOGN("client not found...");
             return;
@@ -548,7 +548,7 @@ static void handle_client_message(XEvent *e) {
             }
         }
     } else if (cme->message_type == net_atom[NetActiveWindow]) {
-        struct client *c = get_client_from_window(cme->window);
+        client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
         client_manage_focus(c);
@@ -556,7 +556,7 @@ static void handle_client_message(XEvent *e) {
         switch_ws(cme->data.l[0]);
     } else if (cme->message_type == net_atom[NetWMMoveResize]) {
         LOGN("Handling MOVERESIZE");
-        struct client *c = get_client_from_window(cme->window);
+        client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
 
@@ -572,7 +572,7 @@ static void handle_client_message(XEvent *e) {
             break;
         }
     } else if (cme->message_type == wm_atom[WMChangeState]) {
-        struct client *c = get_client_from_window(cme->window);
+        client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
         if (c->hidden) {
@@ -618,8 +618,12 @@ static void handle_key_press(XEvent *e) {
             if (keysym - XK_1 < WORKSPACE_NUMBER) {
                 if (ev->state & ShiftMask) {
                     client_send_to_ws(f_client, keysym - XK_1);
+                    suppress_super_tap();
+                    return;
                 } else {
                     switch_ws(keysym - XK_1);
+                    suppress_super_tap();
+                    return;
                 }
             }
             suppress_super_tap();
@@ -649,6 +653,7 @@ static void handle_key_press(XEvent *e) {
     }
 }
 
+// reorder focus list when alt is released, and detect if super key was tapped
 static void handle_key_release(XEvent *e) {
     XKeyReleasedEvent *ev = &e->xkey;
     bool super_tapped = false;
@@ -677,7 +682,7 @@ static void handle_key_release(XEvent *e) {
 // move the next focus window to the last one so we can cycle focus between recent windows
 static void reorder_focus(void) {
     if (f_client && f_last_client && (f_client != f_last_client)) {
-        for (struct client **cur = &f_list[curr_ws]; *cur != NULL; cur = &((*cur)->f_next)) {
+        for (client **cur = &f_list[curr_ws]; *cur != NULL; cur = &((*cur)->f_next)) {
             if (*cur == f_last_client) {
                 *cur = f_last_client->f_next;
                 f_last_client->f_next = f_client->f_next;
@@ -714,7 +719,7 @@ static void spawn(const char *file, char *const *argv) {
 static void handle_button_press(XEvent *e) {
     XButtonPressedEvent *bev = &e->xbutton;
     XEvent ev;
-    struct client *c;
+    client *c;
     int x, y, ocx, ocy, nx, ny, nw, nh, di, ocw, och;
     unsigned int dui, state;
     Window root_return, child_return;
@@ -832,7 +837,7 @@ static void handle_button_press(XEvent *e) {
     XUngrabPointer(display, CurrentTime);
 }
 
-static void client_try_drag(struct client *c, int is_move, int x, int y) {
+static void client_try_drag(client *c, int is_move, int x, int y) {
     XEvent ev;
     int nx, ny, ocx, ocy, nw, nh, ocw, och, rx, ry;
     unsigned int mask;
@@ -877,7 +882,7 @@ static void client_try_drag(struct client *c, int is_move, int x, int y) {
     XUngrabPointer(display, CurrentTime);
 }
 
-static void client_update_state(struct client *c) {
+static void client_update_state(client *c) {
     long data[2];
     data[0] = c->hidden ? IconicState : NormalState; // NormalState, IconicState, etc.
     data[1] = None;                                  // Icon window, if applicable
@@ -941,7 +946,7 @@ static void client_update_state(struct client *c) {
 
 static void handle_expose(XEvent *e) {
     XExposeEvent *ev = &e->xexpose;
-    struct client *c;
+    client *c;
     bool focused;
 
     // LOGN("Handling expose event");
@@ -963,7 +968,7 @@ static void handle_focus(XEvent *e) {
 
 static void handle_property_notify(XEvent *e) {
     XPropertyEvent *ev = &e->xproperty;
-    struct client *c;
+    client *c;
 
     // LOGP("property: %s", XGetAtomName(display, ev->atom));
     c = get_client_from_window(ev->window);
@@ -982,7 +987,7 @@ static void handle_property_notify(XEvent *e) {
 
 static void handle_configure_notify(XEvent *e) {
     XConfigureEvent *ev = &e->xconfigure;
-    struct client *c = get_client_from_window(ev->window);
+    client *c = get_client_from_window(ev->window);
     if (c != NULL) {
         int cx = left_width(c);
         int cy = top_height(c);
@@ -1007,7 +1012,7 @@ static void handle_configure_notify(XEvent *e) {
 }
 
 static void handle_configure_request(XEvent *e) {
-    struct client *c;
+    client *c;
     XConfigureRequestEvent *ev = &e->xconfigurerequest;
     XWindowChanges wc;
 
@@ -1072,19 +1077,19 @@ static void handle_map_request(XEvent *e) {
 
 static void handle_destroy_notify(XEvent *e) {
     XDestroyWindowEvent *ev = &e->xdestroywindow;
-    struct client *c = get_client_from_window(ev->window);
+    client *c = get_client_from_window(ev->window);
     LOGP("e: destroy %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 }
 
 static void handle_reparent_notify(XEvent *e) {
     XReparentEvent *ev = &e->xreparent;
-    struct client *c = get_client_from_window(ev->window);
+    client *c = get_client_from_window(ev->window);
     LOGP("e: reparent %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 }
 
 static void handle_unmap_notify(XEvent *e) {
     XUnmapEvent *ev = &e->xunmap;
-    struct client *c = get_client_from_window(ev->window);
+    client *c = get_client_from_window(ev->window);
     LOGP("e: unmap %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 
     if (c == NULL) {
@@ -1124,7 +1129,7 @@ static void handle_unmap_notify(XEvent *e) {
 static void handle_enter_notify(XEvent *e) {
     XEnterWindowEvent *ev = &e->xcrossing;
 
-    struct client *c;
+    client *c;
 
     if (!conf.follow_pointer)
         return;
@@ -1143,7 +1148,7 @@ static void handle_enter_notify(XEvent *e) {
 }
 
 /* Hides the given Client by moving it outside of the visible display */
-static void client_hide(struct client *c) {
+static void client_hide(client *c) {
     if (!c->hidden) {
         c->x_hide = c->geom.x;
         LOGN("Hiding client");
@@ -1163,7 +1168,7 @@ static void load_config(char *conf_path) {
     }
 }
 
-static void client_manage_focus(struct client *c) {
+static void client_manage_focus(client *c) {
     if (c != NULL && f_client != NULL) {
         client_set_color(f_client, conf.iu_color, conf.bu_color);
         draw_text(f_client, false);
@@ -1237,7 +1242,7 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
 
     // Make sure we aren't trying to map the same window twice
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
-        for (struct client *tmp = c_list[i]; tmp; tmp = tmp->next) {
+        for (client *tmp = c_list[i]; tmp; tmp = tmp->next) {
             if (tmp->window == w) {
                 LOGN("Error, window already mapped. Not mapping.");
                 return;
@@ -1248,7 +1253,7 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     // Get class information for the current window
     XClassHint ch;
     bool has_class_hint = false;
-    if (XGetClassHint(display, w, &ch) > Success) {
+    if (XGetClassHint(display, w, &ch)) {
         LOGP("client has class %s", ch.res_class);
         LOGP("client has name %s", ch.res_name);
         if (ch.res_class)
@@ -1257,14 +1262,18 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
             XFree(ch.res_name);
         has_class_hint = true;
     } else {
-        LOGN("could not retrieve client class hints. Not managing.");
+    #if 1
+        LOGN("warning: could not get class hints. This window may have an orphaned decor.");
+    #else
+        LOGN("not managing window with no class hint.");
         return;
+    #endif
     }
 
-    struct client *c;
-    c = malloc(sizeof(struct client));
+    client *c;
+    c = malloc(sizeof(client));
     if (c == NULL) {
-        LOGN("Error, malloc could not allocated new window");
+        LOGN("Error, malloc could not allocate new window");
         return;
     }
     c->window = w;
@@ -1292,6 +1301,7 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
         XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
     }
 
+#if 0
     if (conf.decorate) {
         if (c->class_hint) {
             LOGN("Decorating window");
@@ -1300,6 +1310,10 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
             LOGN("Not decorating window with no class hint");
         }
     }
+#else
+    if (conf.decorate)
+        client_decorations_create(c);
+#endif
 
     client_set_title(c);
     client_refresh(c); /* using our current factoring, w/h are set incorrectly */
@@ -1326,7 +1340,7 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     client_update_state(c);
 }
 
-static int manage_xsend_icccm(struct client *c, Atom atom) {
+static int manage_xsend_icccm(client *c, Atom atom) {
     /* This is from a dwm patch by Brendan MacDonell:
      * http://lists.suckless.org/dev/1104/7548.html */
 
@@ -1354,7 +1368,7 @@ static int manage_xsend_icccm(struct client *c, Atom atom) {
     return exists;
 }
 
-static void client_move_absolute(struct client *c, int x, int y) {
+static void client_move_absolute(client *c, int x, int y) {
     XMoveWindow(display, c->dec, x - left_width(c), y - top_height(c));
 
     c->geom.x = x;
@@ -1367,7 +1381,7 @@ static void client_move_absolute(struct client *c, int x, int y) {
     client_notify_move(c);
 }
 
-static void client_notify_move(struct client *c) {
+static void client_notify_move(client *c) {
     // comply with ICCCW so that programs know where the are in the root
     // this makes drag and drop target correctly
     XConfigureEvent cev;
@@ -1387,11 +1401,11 @@ static void client_notify_move(struct client *c) {
     XSendEvent(display, c->window, False, StructureNotifyMask, (XEvent *)&cev);
 }
 
-static void client_move_relative(struct client *c, int x, int y) {
+static void client_move_relative(client *c, int x, int y) {
     client_move_absolute(c, c->geom.x + x, c->geom.y + y);
 }
 
-static void client_move_to_front(struct client *c) {
+static void client_move_to_front(client *c) {
     int ws;
     ws = c->ws;
 
@@ -1403,7 +1417,7 @@ static void client_move_to_front(struct client *c) {
     if (c_list[ws] == c || c_list[ws]->next == NULL)
         return;
 
-    struct client *tmp;
+    client *tmp;
     for (tmp = c_list[ws]; tmp->next != NULL; tmp = tmp->next)
         if (tmp->next == c)
             break;
@@ -1414,7 +1428,7 @@ static void client_move_to_front(struct client *c) {
     c_list[ws] = c;
 }
 
-static void client_monocle(struct client *c) {
+static void client_monocle(client *c) {
     XEvent ev;
     memset(&ev, 0, sizeof ev);
 
@@ -1436,12 +1450,12 @@ static void client_monocle(struct client *c) {
     client_update_state(c);
 }
 
-static void client_place(struct client *c) {
+static void client_place(client *c) {
     client_center(c);
     return;
 }
 
-static void client_raise(struct client *c) {
+static void client_raise(client *c) {
     if (c != NULL) {
         if (c->dec)
             XRaiseWindow(display, c->dec ? c->dec : c->window);
@@ -1490,7 +1504,7 @@ static void monitors_setup(void) {
     ewmh_set_viewport();
 }
 
-static void client_refresh(struct client *c) {
+static void client_refresh(client *c) {
     bool mono = c->mono;
     LOGN("Refreshing client");
     for (int i = 0; i < 2; i++) {
@@ -1502,7 +1516,7 @@ static void client_refresh(struct client *c) {
 
 static void refresh_config(void) {
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
-        for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
+        for (client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
             if (conf.decorate) {
                 XWindowChanges wc;
                 wc.border_width = conf.b_width;
@@ -1527,7 +1541,7 @@ static void refresh_config(void) {
     }
 }
 
-static void client_resize_absolute(struct client *c, int w, int h) {
+static void client_resize_absolute(client *c, int w, int h) {
     XSizeHints hints;
     XGetNormalHints(display, c->window, &hints);
     c->geom.width = w = MAX(hints.min_width, w);
@@ -1547,11 +1561,11 @@ static void client_resize_absolute(struct client *c, int w, int h) {
     draw_text(c, f_client == c);
 }
 
-static void client_resize_relative(struct client *c, int w, int h) {
+static void client_resize_relative(client *c, int w, int h) {
     client_resize_absolute(c, c->geom.width + w, c->geom.height + h);
 }
 
-static void client_save(struct client *c, int ws) {
+static void client_save(client *c, int ws) {
     /* Save the client to the "stack" of managed clients */
     c->next = c_list[ws];
     c_list[ws] = c;
@@ -1580,7 +1594,7 @@ static bool safe_to_focus(int ws) {
     return true;
 }
 
-static void client_send_to_ws(struct client *c, int ws) {
+static void client_send_to_ws(client *c, int ws) {
     int prev, mon_next, mon_prev, x_off, y_off;
     mon_next = ws_m_list[ws];
     mon_prev = ws_m_list[c->ws];
@@ -1602,18 +1616,18 @@ static void client_send_to_ws(struct client *c, int ws) {
     ewmh_set_desktop(c, ws);
 }
 
-static void client_set_color(struct client *c, unsigned long i_color, unsigned long b_color) {
+static void client_set_color(client *c, unsigned long i_color, unsigned long b_color) {
     if (c->decorated) {
         XSetWindowBackground(display, c->dec, i_color);
         XSetWindowBorder(display, c->dec, b_color);
     }
 }
 
-static void client_set_input(struct client *c) {
+static void client_set_input(client *c) {
     XSetInputFocus(display, c->window, RevertToPointerRoot, CurrentTime);
 }
 
-static void client_set_title(struct client *c) {
+static void client_set_title(client *c) {
     XTextProperty tp;
     char **slist = NULL;
     int count;
@@ -1812,7 +1826,7 @@ static void setup(void) {
     ewmh_set_desktop_names();
 }
 
-static void client_show(struct client *c) {
+static void client_show(client *c) {
     if (c->hidden) {
         LOGN("Showing client");
         client_move_absolute(c, c->x_hide, c->geom.y);
@@ -1822,14 +1836,14 @@ static void client_show(struct client *c) {
     }
 }
 
-static void client_snap_left(struct client *c) {
+static void client_snap_left(client *c) {
     int mon;
     mon = ws_m_list[c->ws];
     client_move_absolute(c, m_list[mon].x + conf.left_gap + left_width(c), m_list[mon].y + conf.top_gap + top_height(c));
     client_resize_absolute(c, m_list[mon].width / 2 - conf.left_gap - get_dec_width(c), m_list[mon].height - conf.top_gap - conf.bot_gap - get_dec_height(c));
 }
 
-static void client_snap_right(struct client *c) {
+static void client_snap_right(client *c) {
     int mon;
     mon = ws_m_list[c->ws];
     client_move_absolute(c, m_list[mon].x + m_list[mon].width / 2 + left_width(c), m_list[mon].y + conf.top_gap + top_height(c));
@@ -1841,14 +1855,14 @@ static void switch_ws(int ws) {
         return;
     for (int i = 0; i < WORKSPACE_NUMBER; i++) {
         if (i != ws && ws_m_list[i] == ws_m_list[ws]) {
-            for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
+            for (client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
                 // hide each client preserving the hidden status
                 int hidden = tmp->hidden;
                 client_hide(tmp);
                 tmp->hidden = hidden;
             }
         } else if (i == ws) {
-            for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
+            for (client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
                 // assume each client is hidden offscreen, and only show those without hidden set
                 if (!tmp->hidden) {
                     tmp->hidden = true;
@@ -1861,7 +1875,7 @@ static void switch_ws(int ws) {
     curr_ws = ws;
     int mon = ws_m_list[ws];
     LOGP("Setting Screen #%d with active workspace %d", m_list[mon].screen, ws);
-    for (struct client * cur = f_list[curr_ws]; cur != NULL; cur = cur->f_next) {
+    for (client * cur = f_list[curr_ws]; cur != NULL; cur = cur->f_next) {
         if (!cur->hidden) {
             client_manage_focus(f_list[curr_ws]);
             break;
@@ -1870,18 +1884,18 @@ static void switch_ws(int ws) {
     ewmh_set_active_desktop(ws);
 }
 
-static void warp_pointer(struct client *c) {
+static void warp_pointer(client *c) {
     XWarpPointer(display, None, c->dec, 0, 0, 0, 0, c->geom.width / 2, c->geom.height / 2);
 }
 
-static void client_toggle_decorations(struct client *c) {
+static void client_toggle_decorations(client *c) {
     if (c->decorated)
         client_decorations_destroy(c);
     else if (!c->fullscreen) // don't undecorate fullscreen windows
         client_decorations_show(c);
 }
 
-static void ewmh_set_fullscreen(struct client *c, bool fullscreen) {
+static void ewmh_set_fullscreen(client *c, bool fullscreen) {
     XChangeProperty(display, c->window, net_atom[NetWMState], XA_ATOM, 32,
                     PropModeReplace, (unsigned char *)&net_atom[NetWMStateFullscreen], fullscreen ? 1 : 0);
 }
@@ -1891,20 +1905,20 @@ static void ewmh_set_viewport(void) {
     XChangeProperty(display, root, net_atom[NetDesktopViewport], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&data, 2);
 }
 
-static void ewmh_set_focus(struct client *c) {
+static void ewmh_set_focus(client *c) {
     XDeleteProperty(display, root, net_atom[NetActiveWindow]);
     /* Tell EWMH about our new window */
     XChangeProperty(display, root, net_atom[NetActiveWindow], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&(c->window), 1);
 }
 
-static void ewmh_set_desktop(struct client *c, int ws) {
+static void ewmh_set_desktop(client *c, int ws) {
     unsigned long data[1];
     data[0] = ws;
     XChangeProperty(display, c->window, net_atom[NetWMDesktop],
                     XA_CARDINAL, 32, PropModeReplace, (unsigned char *)data, 1);
 }
 
-static void ewmh_set_frame_extents(struct client *c) {
+static void ewmh_set_frame_extents(client *c) {
     unsigned long data[4];
     int left, right, top, bottom;
     LOGN("Setting client frame extents");
@@ -1930,7 +1944,7 @@ static void ewmh_set_client_list(void) {
     /* Remove all current clients */
     XDeleteProperty(display, root, net_atom[NetClientList]);
     for (int i = 0; i < WORKSPACE_NUMBER; i++)
-        for (struct client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next)
+        for (client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next)
             XChangeProperty(display, root, net_atom[NetClientList], XA_WINDOW, 32, PropModeAppend,
                             (unsigned char *)&(tmp->window), 1);
 }
@@ -2063,52 +2077,52 @@ static int xerror(Display *dpy, XErrorEvent *e) {
     return xerrorxlib(dpy, e);
 }
 
-int get_actual_x(struct client *c) {
+int get_actual_x(client *c) {
     int b_width = c->decorated ? conf.b_width : 0;
     int i_width = c->decorated ? conf.i_width : 0;
     return c->geom.x - b_width - i_width;
 }
 
-int get_actual_y(struct client *c) {
+int get_actual_y(client *c) {
     int t_height = c->decorated ? conf.t_height : 0;
     int b_width = c->decorated ? conf.b_width : 0;
     int i_width = c->decorated ? conf.i_width : 0;
     return c->geom.y - b_width - i_width - t_height;
 }
 
-int get_actual_width(struct client *c) {
+int get_actual_width(client *c) {
     return c->geom.width + get_dec_width(c);
 }
 
-int get_actual_height(struct client *c) {
+int get_actual_height(client *c) {
     return c->geom.height + get_dec_height(c);
 }
 
-int get_dec_width(struct client *c) {
+int get_dec_width(client *c) {
     return c->decorated ? (2 * conf.i_width) : 0;
 }
 
-int get_dec_height(struct client *c) {
+int get_dec_height(client *c) {
     return c->decorated ? (2 * conf.i_width + conf.t_height + conf.bottom_height) : 0;
 }
 
-int left_width(struct client *c) {
+int left_width(client *c) {
     return c->decorated ? conf.i_width : 0;
 }
 
-int top_height(struct client *c) {
+int top_height(client *c) {
     return c->decorated ? (conf.t_height + conf.i_width) : 0;
 }
 
-static void feature_toggle(struct client *c) {
+static void feature_toggle(client *c) {
     UNUSED(c);
     flight = !flight;
 }
 
-static void toggle_hide_all(struct client *_c) {
+static void toggle_hide_all(client *_c) {
     UNUSED(_c);
     bool something_hid = false;
-    struct client *c = c_list[curr_ws];
+    client *c = c_list[curr_ws];
     while (c) {
         if (!c->hidden) {
             client_hide(c);

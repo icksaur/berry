@@ -21,7 +21,7 @@ struct client_geom {
     int x, y, width, height;
 };
 
-struct client {
+typedef struct client {
     Window window, dec;
     int ws, x_hide;
     bool decorated, hidden, fullscreen, mono, was_fs, class_hint;
@@ -29,7 +29,7 @@ struct client {
     struct client_geom prev;
     struct client *next, *f_next;
     char title[512];
-};
+} client;
 
 struct config {
     unsigned int b_width, i_width, t_height, bottom_height, top_gap, bot_gap, left_gap, right_gap, r_step, m_step, move_button, move_mask, resize_button, resize_mask, pointer_interval;
