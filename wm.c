@@ -1610,8 +1610,10 @@ static void client_send_to_ws(client *c, int ws) {
 
     if (safe_to_focus(ws))
         client_show(c);
-    else
+    else {
         client_hide(c);
+        c->hidden = false;
+    }
 
     ewmh_set_desktop(c, ws);
 }
@@ -2058,7 +2060,10 @@ static void version(void) {
 
 static int xerror(Display *dpy, XErrorEvent *e) {
     /* this is stolen verbatim from katriawm which stole it from dwm lol */
-    if (e->error_code == BadWindow ||
+    if (e->error_code == BadWindow ) {
+        LOGN("BadWindow is suspicious");
+        return 0;
+    } else if (
         (e->request_code == X_SetInputFocus && e->error_code == BadMatch) ||
         (e->request_code == X_PolyText8 && e->error_code == BadDrawable) ||
         (e->request_code == X_PolyFillRectangle && e->error_code == BadDrawable) ||
