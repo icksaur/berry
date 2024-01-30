@@ -94,6 +94,7 @@ static void client_snap_right(client *c);
 static void client_toggle_decorations(client *c);
 static void client_try_drag(client *c, int is_move, int x, int y);
 static void client_update_state(client *c);
+static void client_unmanage(client *c);
 
 /* EWMH functions */
 static void ewmh_set_fullscreen(client *c, bool fullscreen);
@@ -255,7 +256,6 @@ static const int num_shortcuts = sizeof(shortcuts) / sizeof(shortcut);
  */
 static void client_center(client *c) {
     int mon;
-    LOGN("Centering Client");
     mon = ws_m_list[c->ws];
     client_center_in_rect(c, m_list[mon].x, m_list[mon].y, m_list[mon].width, m_list[mon].height);
 }
@@ -265,10 +265,8 @@ static int ceil10(int n) {
 }
 
 static void client_center_in_rect(client *c, int x, int y, unsigned w, unsigned h) {
-    LOGP("Centering at x=%d, y=%d, w=%u, h=%u", x, y, w, h);
     int new_x = ceil10(x + (conf.left_gap - conf.right_gap) / 2 + w / 2 - c->geom.width / 2);
     int new_y = ceil10(y + (conf.top_gap - conf.bot_gap) / 2 + h / 2 - c->geom.height / 2);
-    LOGP("Sending to x=%d, y=%d", new_x, new_y);
     client_move_absolute(c, new_x, new_y);
 
     client_refresh(c); // in case we went over the top gap
@@ -308,11 +306,7 @@ static void draw_text(client *c, bool focused) {
     XClearWindow(display, c->dec);
     draw = XftDrawCreate(display, c->dec, DefaultVisual(display, screen), DefaultColormap(display, screen));
     xft_render_color = focused ? &xft_focus_color : &xft_unfocus_color;
-    /*LOGP("Drawing the following text with height %u color #%02x%02x%02x x %d y %d",
-    extents.height,
-    (unsigned int)xft_render_color->color.red, (unsigned int)xft_render_color->color.green, (unsigned int)xft_render_color->color.blue,
-    x, y);
-    LOGP("   %s", c->title);*/
+
     XftDrawStringUtf8(draw, xft_render_color, font, x, y, (XftChar8 *)c->title, strlen(c->title));
     XftDrawDestroy(draw);
 }
@@ -358,7 +352,6 @@ static void client_decorations_show(client *c) {
     client_refresh(c); // reposition client within decoration
 }
 
-/* Destroy any "dummy" windows associated with the given Client as decorations */
 static void client_decorations_destroy(client *c) {
     if (c->mono || c->fullscreen) {
         XMoveResizeWindow(display, c->window, 0, 0, get_actual_width(c), get_actual_height(c));
@@ -1078,7 +1071,10 @@ static void handle_map_request(XEvent *e) {
 static void handle_destroy_notify(XEvent *e) {
     XDestroyWindowEvent *ev = &e->xdestroywindow;
     client *c = get_client_from_window(ev->window);
-    LOGP("e: destroy %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
+    if (c != NULL) {
+        LOGP("e: destroy %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
+    }
+    client_unmanage(c);
 }
 
 static void handle_reparent_notify(XEvent *e) {
@@ -1090,8 +1086,31 @@ static void handle_reparent_notify(XEvent *e) {
 static void handle_unmap_notify(XEvent *e) {
     XUnmapEvent *ev = &e->xunmap;
     client *c = get_client_from_window(ev->window);
+
+    if (c == NULL) {
+        /* Some applications *ahem* Spotify *ahem*, don't seem to place nicely with being deleted.
+         * They close slowing, causing focusing issues with unmap requests. Check to see if the current
+         * workspace is empty and, if so, focus the root client so that we can pick up new key presses..
+         */
+        if (f_list[curr_ws] == NULL) {
+            client_manage_focus(NULL);
+        }
+
+        window_find_struts();
+        return;
+    }
+
     LOGP("e: unmap %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
 
+    if (ev->event == root) {
+        LOGP("ignoring root unmap for %lu", ev->window);
+        return;
+    }
+
+    client_unmanage(c);
+}
+
+static void client_unmanage(client *c) {
     if (c == NULL) {
         /* Some applications *ahem* Spotify *ahem*, don't seem to place nicely with being deleted.
          * They close slowing, causing focusing issues with unmap requests. Check to see if the current
@@ -1108,22 +1127,16 @@ static void handle_unmap_notify(XEvent *e) {
         return;
     }
 
-    if (ev->event == root) {
-        LOGP("ignoring root unmap for %lu", ev->window);
-        return;
-    }
-
-    if (c != NULL) {
-        int border = conf.b_width + conf.i_width;
-        XSelectInput(display, c->dec, NoEventMask); // stop any further event notifications
-        XSelectInput(display, c->window, NoEventMask);
-        XUnmapWindow(display, c->dec);                                                                     // this is a bit too late and picom will fade out only the decorations
-        XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height); // why do we need to do this?
-        XDestroyWindow(display, c->dec);
-        client_delete(c);
-        free(c);
-        client_raise(f_client);
-    }
+    int border = conf.b_width + conf.i_width;
+    XSelectInput(display, c->dec, NoEventMask); // stop any further event notifications
+    XSelectInput(display, c->window, NoEventMask);
+    XUnmapWindow(display, c->dec);                                                                     // this is a bit too late and picom will fade out only the decorations
+    XReparentWindow(display, c->window, root, c->geom.x + border, c->geom.y + border + conf.t_height); // why do we need to do this?
+    LOGP("destroying decoration 0x%x", (unsigned int)c->dec);
+    XDestroyWindow(display, c->dec);
+    client_delete(c);
+    free(c);
+    client_raise(f_client);
 }
 
 static void handle_enter_notify(XEvent *e) {
@@ -1196,7 +1209,7 @@ static void client_manage_focus(client *c) {
         reorder_focus();
     } else { // client is null, might happen when switching to a new workspace
              //  without any active clients
-        LOGN("Giving focus to dummy window");
+        //LOGN("Giving focus to dummy window");
         f_client = NULL;
         XSetInputFocus(display, nofocus, RevertToPointerRoot, CurrentTime);
     }
@@ -1338,6 +1351,8 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
         f_last_client = f_client;
     client_manage_focus(c);
     client_update_state(c);
+
+    LOGP("new window: 0x%x dec: 0x%x", (unsigned int)c->window, (unsigned int)c->dec);
 }
 
 static int manage_xsend_icccm(client *c, Atom atom) {
@@ -2061,7 +2076,6 @@ static void version(void) {
 static int xerror(Display *dpy, XErrorEvent *e) {
     /* this is stolen verbatim from katriawm which stole it from dwm lol */
     if (e->error_code == BadWindow ) {
-        LOGN("BadWindow is suspicious");
         return 0;
     } else if (
         (e->request_code == X_SetInputFocus && e->error_code == BadMatch) ||
