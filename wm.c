@@ -58,6 +58,7 @@ static unsigned int tab_keycode;
 static unsigned int super_l_keycode;
 static unsigned int super_r_keycode;
 static unsigned int flight = True;
+static bool suppress_raise = False;
 
 /* All functions */
 
@@ -544,6 +545,7 @@ static void handle_client_message(XEvent *e) {
         client *c = get_client_from_window(cme->window);
         if (c == NULL)
             return;
+        f_last_client = f_client;
         client_manage_focus(c);
     } else if (cme->message_type == net_atom[NetCurrentDesktop]) {
         switch_ws(cme->data.l[0]);
@@ -672,7 +674,7 @@ static void handle_key_release(XEvent *e) {
     }
 }
 
-// move the next focus window to the last one so we can cycle focus between recent windows
+// move the last focused window to be the next one so we can cycle focus between recent windows
 static void reorder_focus(void) {
     if (f_client && f_last_client && (f_client != f_last_client)) {
         for (client **cur = &f_list[curr_ws]; *cur != NULL; cur = &((*cur)->f_next)) {
@@ -727,7 +729,7 @@ static void handle_button_press(XEvent *e) {
     // change focus if we have a left-click event
     if (bev->button == 1 && c != f_client) {
         switch_ws(c->ws);
-        f_last_client = c; // prepare a focus item for LRU
+        f_last_client = f_client;
         client_manage_focus(c);
     }
 
@@ -1081,6 +1083,12 @@ static void handle_reparent_notify(XEvent *e) {
     XReparentEvent *ev = &e->xreparent;
     client *c = get_client_from_window(ev->window);
     LOGP("e: reparent %x (%s)", (int)ev->window, c == NULL ? "other" : (c->window == ev->window ? "client" : "decoration"));
+    if (c != NULL) {
+        if (ev->parent != c->dec) {
+            LOGN("window was reparented out of its decoration. Unmanaging it.");
+            client_unmanage(c);
+        }
+    }
 }
 
 static void handle_unmap_notify(XEvent *e) {
@@ -1189,7 +1197,6 @@ static void client_manage_focus(client *c) {
     }
 
     if (c != NULL) {
-        client_move_to_front(c);
         client_set_color(c, conf.if_color, conf.bf_color);
         draw_text(c, true);
         client_raise(c);
@@ -1274,13 +1281,6 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
         if (ch.res_name)
             XFree(ch.res_name);
         has_class_hint = true;
-    } else {
-    #if 1
-        LOGN("warning: could not get class hints. This window may have an orphaned decor.");
-    #else
-        LOGN("not managing window with no class hint.");
-        return;
-    #endif
     }
 
     client *c;
@@ -1301,20 +1301,15 @@ static void manage_new_window(Window w, XWindowAttributes *wa) {
     c->mono = false;
     c->was_fs = false;
     c->decorated = !window_is_undecorated(w);
-    c->prev = c->geom; // just in case we get some odd fullscreen requests, we want this to be initialized to something reasonable
+    c->prev = c->geom; // just in case we get fullscreen requests, we want this to be initialized to something reasonable
 
     XSetWindowBorderWidth(display, c->window, 0);
 
     // intercept move mask clicks for managing the window, and single-click for focusing
-    if (flight) {
-        grab_button_modifiers(AnyButton, MOVE_MASK, c->window);
-        grab_button_modifiers(AnyButton, 0, c->window);
-    } else {
-        XGrabButton(display, AnyButton, MOVE_MASK, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
-        XGrabButton(display, AnyButton, 0, c->window, True, ButtonPressMask, GrabModeSync, GrabModeAsync, None, None);
-    }
+    grab_button_modifiers(AnyButton, MOVE_MASK, c->window);
+    grab_button_modifiers(AnyButton, 0, c->window);
 
-#if 0
+#if 1
     if (conf.decorate) {
         if (c->class_hint) {
             LOGN("Decorating window");
@@ -1472,6 +1467,7 @@ static void client_place(client *c) {
 
 static void client_raise(client *c) {
     if (c != NULL) {
+        client_move_to_front(c);
         if (c->dec)
             XRaiseWindow(display, c->dec ? c->dec : c->window);
     }
@@ -1847,7 +1843,9 @@ static void client_show(client *c) {
     if (c->hidden) {
         LOGN("Showing client");
         client_move_absolute(c, c->x_hide, c->geom.y);
-        client_raise(c);
+        if (!suppress_raise) {
+            client_raise(c);
+        }
         c->hidden = false;
         client_update_state(c);
     }
@@ -1879,6 +1877,7 @@ static void switch_ws(int ws) {
                 tmp->hidden = hidden;
             }
         } else if (i == ws) {
+            suppress_raise = True;
             for (client *tmp = c_list[i]; tmp != NULL; tmp = tmp->next) {
                 // assume each client is hidden offscreen, and only show those without hidden set
                 if (!tmp->hidden) {
@@ -1886,15 +1885,16 @@ static void switch_ws(int ws) {
                     client_show(tmp);
                 }
             }
+            suppress_raise = False;
         }
     }
 
     curr_ws = ws;
     int mon = ws_m_list[ws];
     LOGP("Setting Screen #%d with active workspace %d", m_list[mon].screen, ws);
-    for (client * cur = f_list[curr_ws]; cur != NULL; cur = cur->f_next) {
+    for (client * cur = c_list[curr_ws]; cur != NULL; cur = cur->f_next) {
         if (!cur->hidden) {
-            client_manage_focus(f_list[curr_ws]);
+            client_manage_focus(cur);
             break;
         }
     }
