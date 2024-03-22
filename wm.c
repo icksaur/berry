@@ -155,6 +155,7 @@ static void send_config(const char *key, const char *value);
 static void update_config(unsigned int offset, unsigned int value);
 static void suppress_super_tap(void);
 static void toggle_hide_all(client *);
+static void stop(client *);
 
 static Bool window_is_undecorated(Window window);
 static void window_find_struts(void);
@@ -235,6 +236,7 @@ static const shortcut shortcuts[] = {
     { XK_Right, client_snap_right },
     { XK_KP_Add, feature_toggle },
     { XK_d, toggle_hide_all },
+    { XK_BackSpace, stop },
 };
 
 static const launcher nomod_launchers[] = {
@@ -1545,8 +1547,9 @@ static void refresh_config(void) {
             if (i != curr_ws) {
                 client_hide(tmp);
             } else {
-                client_show(tmp);
-                client_raise(tmp);
+                // if we raise the client it will reorder the list and this for loop never ends
+                //client_show(tmp);
+                //client_raise(tmp);
             }
         }
     }
@@ -2161,6 +2164,11 @@ static void toggle_hide_all(client *_c) {
         c = c->next;
     }
     client_manage_focus(NULL);
+}
+
+static void stop(client * c) {
+    UNUSED(c);
+    running = false;
 }
 
 static void suppress_super_tap(void) {

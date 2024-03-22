@@ -9,7 +9,7 @@
             "args": ["-d", "-c", "${workspaceFolder}/examples/autostart"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [{"name": "DISPLAY", "value": ":2"}],
+            "environment": [{"name": "DISPLAY", "value": ":3"}],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [
