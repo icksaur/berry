@@ -222,6 +222,7 @@ static const launcher launchers[] = {
     { XK_Return, "kitty", NULL },
     { XK_Escape, "xfce4-taskmanager", NULL },
     { XK_l, "slock", NULL },
+    { XK_e, "thunar", NULL },
 };
 
 static const launcher super_tap_launcher = { 0, "rofi", (char *const[]){ "-show", "drun", "-kb-cancel", "Super_L,Escape", NULL } };
